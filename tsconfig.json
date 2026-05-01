@@ -1,18 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "isolatedModules": true,
-    "lib": ["ESNext"],
-    "types": ["node"]
-  },
-  "include": ["src/**/*"]
+  "extends": "./playground/.nuxt/tsconfig.json",
+  "include": ["src/**/*", "test/**/*"]
 }

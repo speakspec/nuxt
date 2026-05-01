@@ -10,23 +10,24 @@
 //   - SDK is the only valid signing path (server-side only)
 //   - Customer body NEVER signed by SDK; signed bundle from SpeakSpec
 //   - All fetches are SSR-time, never build-time baked
-//
-// Step 3.0 ships only the module skeleton — actual server routes,
-// composables, and webhook receivers land in subsequent steps.
 
-import { defineNuxtModule } from '@nuxt/kit'
+import { defineNuxtModule, addServerHandler, createResolver } from '@nuxt/kit'
+import { defu } from 'defu'
 
 export interface ModuleOptions {
   /**
-   * SpeakSpec entity ID (looks like `ent_xxx`). Required.
+   * SpeakSpec entity slug (the public AIDP id, e.g. `stockfeel`).
    * Available from the customer dashboard at aidp-web after creating
-   * an entity.
+   * an entity. Required.
    */
   entityId?: string
 
   /**
-   * SpeakSpec API key (write scope), looks like `ssk_xxx`. Required.
-   * Held server-side only; NEVER injected into the client bundle.
+   * SpeakSpec API key (write scope), looks like `ssk_xxx`. Held
+   * server-side only; NEVER injected into the client bundle. The
+   * /.well-known/aidp.json fetch does not strictly require this
+   * (the upstream is publicly readable) but later steps that fetch
+   * signed content bundles do.
    */
   apiKey?: string
 
@@ -34,7 +35,8 @@ export interface ModuleOptions {
    * Shared secret for verifying §8.10 cache-invalidation webhook
    * deliveries. Each webhook payload is signed
    * `hmac-sha256(timestamp + "\n" + body)` and the receiver MUST verify
-   * before invalidating any cache key.
+   * before invalidating any cache key. Required when the webhook
+   * receiver lands in Step 3.1.5; ignored until then.
    */
   webhookSecret?: string
 
@@ -63,10 +65,69 @@ export default defineNuxtModule<ModuleOptions>({
   defaults: {
     endpoint: 'https://api.speakspec.com',
   },
-  setup() {
-    // Step 3.1+ will register server handlers, plugins, composables,
-    // and components. The skeleton intentionally does nothing yet —
-    // installing the module on a Nuxt 4 project is a no-op until at
-    // least one feature step lands.
+  setup(options, nuxt) {
+    const resolver = createResolver(import.meta.url)
+
+    // Belt-and-braces validation against SpeakSpec's slug rule
+    // (aidp-server/internal/service/slug_validator.go). Catches the
+    // common mistakes — uppercase, underscores, accidentally pasting
+    // the full URN (`urn:aidp:entity:foo`) — at module-setup time
+    // instead of letting them fail silently in the fetch path.
+    if (options.entityId && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(options.entityId)) {
+      console.warn(
+        `[@speakspec/nuxt] entityId %o does not match SpeakSpec's slug rule `
+        + `(lowercase alphanumerics and hyphens, no leading/trailing hyphen). `
+        + `Verify against your SpeakSpec dashboard — pasting the URN form `
+        + `(urn:aidp:entity:foo) instead of the bare slug is a common mistake.`,
+        options.entityId,
+      )
+    }
+
+    // Private runtime config (server-side only). apiKey + webhookSecret
+    // MUST stay out of the public bundle. defu merges with whatever the
+    // host project already set in nuxt.config.ts, so users can plug
+    // values in either via the module options OR the runtimeConfig.
+    nuxt.options.runtimeConfig.speakspec = defu(
+      nuxt.options.runtimeConfig.speakspec as Record<string, string>,
+      {
+        entityId: options.entityId ?? '',
+        apiKey: options.apiKey ?? '',
+        webhookSecret: options.webhookSecret ?? '',
+        endpoint: options.endpoint ?? 'https://api.speakspec.com',
+      },
+    )
+
+    // Public runtime config — non-secret values that may be referenced
+    // from client-side code in later steps (e.g. siteOrigin for
+    // composables).
+    nuxt.options.runtimeConfig.public.speakspec = defu(
+      nuxt.options.runtimeConfig.public.speakspec as Record<string, string>,
+      {
+        siteOrigin: options.siteOrigin ?? '',
+      },
+    )
+
+    // /.well-known/aidp.json — entity directive cache + ETag wrapper.
+    // Step 3.1 ships this route only; per-content endpoints land in 3.2.
+    addServerHandler({
+      route: '/.well-known/aidp.json',
+      handler: resolver.resolve('./runtime/server/routes/well-known/aidp.json.get'),
+    })
   },
 })
+
+declare module '@nuxt/schema' {
+  interface RuntimeConfig {
+    speakspec: {
+      entityId: string
+      apiKey: string
+      webhookSecret: string
+      endpoint: string
+    }
+  }
+  interface PublicRuntimeConfig {
+    speakspec: {
+      siteOrigin: string
+    }
+  }
+}
