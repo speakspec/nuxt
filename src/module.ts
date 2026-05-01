@@ -11,7 +11,7 @@
 //   - Customer body NEVER signed by SDK; signed bundle from SpeakSpec
 //   - All fetches are SSR-time, never build-time baked
 
-import { defineNuxtModule, addServerHandler, createResolver } from '@nuxt/kit'
+import { defineNuxtModule, addServerHandler, addPlugin, addImports, addComponent, createResolver } from '@nuxt/kit'
 import { defu } from 'defu'
 
 export interface ModuleOptions {
@@ -143,6 +143,23 @@ export default defineNuxtModule<ModuleOptions>({
       route: '/api/_aidp/invalidate',
       method: 'post',
       handler: resolver.resolve('./runtime/server/api/_aidp/invalidate.post'),
+    })
+
+    // Site-wide HTML link tags (§8.5): `<link rel="aidp">` (entity
+    // discovery anchor) and `<link rel="aidp-keys">` (JWKS pointer).
+    // Per-page `<link rel="aidp-content">` is opt-in via the
+    // useAidpContent composable / <AidpDirective> component below.
+    // Step 3.4.
+    addPlugin(resolver.resolve('./runtime/plugins/aidp-links'))
+
+    addImports({
+      name: 'useAidpContent',
+      from: resolver.resolve('./runtime/composables/useAidpContent'),
+    })
+
+    addComponent({
+      name: 'AidpDirective',
+      filePath: resolver.resolve('./runtime/components/AidpDirective.vue'),
     })
   },
 })
