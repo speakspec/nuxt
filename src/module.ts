@@ -108,10 +108,18 @@ export default defineNuxtModule<ModuleOptions>({
     )
 
     // /.well-known/aidp.json — entity directive cache + ETag wrapper.
-    // Step 3.1 ships this route only; per-content endpoints land in 3.2.
     addServerHandler({
       route: '/.well-known/aidp.json',
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp.json.get'),
+    })
+
+    // /.well-known/aidp/content/:id — per-content signed envelope per
+    // §8.7. The handler strips the `.json` suffix from `:id` so the
+    // canonical URL `/well-known/aidp/content/{id}.json` works as
+    // documented in the spec. Step 3.2.
+    addServerHandler({
+      route: '/.well-known/aidp/content/:id',
+      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/[id].get'),
     })
 
     // POST /api/_aidp/invalidate — receives §8.10 webhooks from
