@@ -52,6 +52,19 @@ export interface ModuleOptions {
    * platform; useful for staging or self-hosted SpeakSpec instances.
    */
   endpoint?: string
+
+  /**
+   * AI crawler detection middleware. Off by default. When enabled,
+   * the SDK inspects every incoming request's User-Agent and emits a
+   * structured `aidp.crawler_impression` JSON log line on matches.
+   * Pipe these into your observability stack to measure AI traffic
+   * without coupling to any specific analytics backend.
+   */
+  botTracking?: {
+    enabled?: boolean
+    /** URL path prefixes to skip (e.g. `/_nuxt/`, `/api/`). */
+    excludePaths?: string[]
+  }
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -87,15 +100,20 @@ export default defineNuxtModule<ModuleOptions>({
     // MUST stay out of the public bundle. defu merges with whatever the
     // host project already set in nuxt.config.ts, so users can plug
     // values in either via the module options OR the runtimeConfig.
-    nuxt.options.runtimeConfig.speakspec = defu(
-      nuxt.options.runtimeConfig.speakspec as Record<string, string>,
+    const mergedPrivate = defu(
+      nuxt.options.runtimeConfig.speakspec as Record<string, unknown>,
       {
         entityId: options.entityId ?? '',
         apiKey: options.apiKey ?? '',
         webhookSecret: options.webhookSecret ?? '',
         endpoint: options.endpoint ?? 'https://api.speakspec.com',
+        botTracking: {
+          enabled: options.botTracking?.enabled ?? false,
+          excludePaths: options.botTracking?.excludePaths ?? ['/_nuxt/', '/api/_aidp/'],
+        },
       },
     )
+    nuxt.options.runtimeConfig.speakspec = mergedPrivate as typeof nuxt.options.runtimeConfig.speakspec
 
     // Public runtime config — non-secret values that may be referenced
     // from client-side code in later steps (e.g. siteOrigin for
@@ -161,6 +179,15 @@ export default defineNuxtModule<ModuleOptions>({
       name: 'AidpDirective',
       filePath: resolver.resolve('./runtime/components/AidpDirective.vue'),
     })
+
+    // Opt-in AI crawler detection middleware. Always registered so
+    // host projects can flip `botTracking.enabled` at runtime via env
+    // var without rebuilding; the middleware itself is the gate.
+    // Step 3.5.
+    addServerHandler({
+      middleware: true,
+      handler: resolver.resolve('./runtime/server/middleware/ai-bot-detect'),
+    })
   },
 })
 
@@ -171,6 +198,10 @@ declare module '@nuxt/schema' {
       apiKey: string
       webhookSecret: string
       endpoint: string
+      botTracking: {
+        enabled: boolean
+        excludePaths: string[]
+      }
     }
   }
   interface PublicRuntimeConfig {
