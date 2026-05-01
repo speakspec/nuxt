@@ -19,6 +19,10 @@ Phase 3 of the AIDP 0.3 PKI rollout. Step 3.0 (this commit) is repository scaffo
 | 3.5 AI-bot detection middleware (opt-in) | not started |
 | 3.6 Validator + CLI + docs | not started |
 
+## Operations notes
+
+- **Rate-limit `/api/_aidp/invalidate` at your CDN / WAF.** The route is HMAC-authenticated (so an attacker without the shared secret cannot evict cache), but the SDK does not throttle requests itself. Without a CDN-side limit an attacker can pin the customer's CPU on SHA-256 verification of forged payloads. SpeakSpec's dispatcher delivers at most a few webhooks per minute under normal operation, so a tight limit (e.g. 60 req/min per source IP) is safe.
+
 ## Design constraints
 
 - **Publishing-first, not injection-first**: the module exposes endpoints; it does not blanket-inject directive JSON into every HTML page.

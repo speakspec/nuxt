@@ -113,6 +113,16 @@ export default defineNuxtModule<ModuleOptions>({
       route: '/.well-known/aidp.json',
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp.json.get'),
     })
+
+    // POST /api/_aidp/invalidate — receives §8.10 webhooks from
+    // SpeakSpec when a directive / content / entity changes. Verifies
+    // HMAC + timestamp window, then evicts the corresponding Nitro
+    // cache key. Step 3.1.5.
+    addServerHandler({
+      route: '/api/_aidp/invalidate',
+      method: 'post',
+      handler: resolver.resolve('./runtime/server/api/_aidp/invalidate.post'),
+    })
   },
 })
 

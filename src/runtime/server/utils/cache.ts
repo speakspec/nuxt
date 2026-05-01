@@ -29,3 +29,42 @@ export function cacheKey(scope: string, id: string): string {
 export function isFresh<T>(bundle: CachedBundle<T> | null): boolean {
   return !!bundle && bundle.expiresAt > Date.now()
 }
+
+/**
+ * Minimal storage shape the AIDP cache helpers depend on. Compatible
+ * with `unstorage`'s `Storage` interface (Nitro's `useStorage` returns
+ * one) — broken out here so unit tests can supply a recording stub
+ * without standing up a Nitro runtime.
+ */
+export interface CacheStorage {
+  removeItem: (key: string) => Promise<unknown>
+  getKeys: (base: string) => Promise<string[]>
+}
+
+/**
+ * Clear all cache entries for a single entity. Removes the entity-
+ * level directive key and every content-level key under that entity.
+ * Called from the webhook receiver when SpeakSpec sends
+ * `scope: "entity"` — covers both the directive and any per-content
+ * envelopes that Step 3.2 will start populating.
+ */
+export async function invalidateEntityCache(storage: CacheStorage, slug: string): Promise<void> {
+  await storage.removeItem(cacheKey('entity', slug))
+  const contentPrefix = cacheKey('content', `${slug}:`)
+  const keys = await storage.getKeys(contentPrefix)
+  for (const key of keys) {
+    await storage.removeItem(key)
+  }
+}
+
+/**
+ * Clear a single per-content cache entry. Called from the webhook
+ * receiver when SpeakSpec sends `scope: "content"`.
+ */
+export async function invalidateContentCache(
+  storage: CacheStorage,
+  slug: string,
+  contentId: string,
+): Promise<void> {
+  await storage.removeItem(cacheKey('content', `${slug}:${contentId}`))
+}
