@@ -122,6 +122,19 @@ export default defineNuxtModule<ModuleOptions>({
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/[id].get'),
     })
 
+    // /.well-known/aidp/content/ — paginated content directory per
+    // §8.8. Spec mandates the trailing slash; we register both forms
+    // so agents that drop it don't 404. Step 3.3.
+    const directoryHandler = resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get')
+    addServerHandler({
+      route: '/.well-known/aidp/content/',
+      handler: directoryHandler,
+    })
+    addServerHandler({
+      route: '/.well-known/aidp/content',
+      handler: directoryHandler,
+    })
+
     // POST /api/_aidp/invalidate — receives §8.10 webhooks from
     // SpeakSpec when a directive / content / entity changes. Verifies
     // HMAC + timestamp window, then evicts the corresponding Nitro

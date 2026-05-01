@@ -104,6 +104,21 @@ describe('invalidateEntityCache', () => {
     expect(s.store.has('content:other:thing')).toBe(true)
   })
 
+  it('also sweeps every paginated directory variant under the same slug', async () => {
+    const s = new FakeStorage()
+    await s.setItem(cacheKey('directory', 'stockfeel:p1s100t'), { d: 1 })
+    await s.setItem(cacheKey('directory', 'stockfeel:p2s100t'), { d: 2 })
+    await s.setItem(cacheKey('directory', 'stockfeel:p1s100tarticle'), { d: 3 })
+    await s.setItem(cacheKey('directory', 'other:p1s100t'), { d: 4 })
+
+    await invalidateEntityCache(s, 'stockfeel')
+
+    expect(s.removed).toContain('directory:stockfeel:p1s100t')
+    expect(s.removed).toContain('directory:stockfeel:p2s100t')
+    expect(s.removed).toContain('directory:stockfeel:p1s100tarticle')
+    expect(s.removed).not.toContain('directory:other:p1s100t')
+  })
+
   it('is a no-op when no matching keys exist', async () => {
     const s = new FakeStorage()
     await invalidateEntityCache(s, 'nobody')
@@ -114,12 +129,12 @@ describe('invalidateEntityCache', () => {
 })
 
 describe('invalidateContentCache', () => {
-  it('removes only the named content key', async () => {
+  it('removes the named content key without touching siblings', async () => {
     const s = new FakeStorage()
     await s.setItem(cacheKey('content', 'stockfeel:a'), 1)
     await s.setItem(cacheKey('content', 'stockfeel:b'), 2)
     await invalidateContentCache(s, 'stockfeel', 'a')
-    expect(s.removed).toEqual(['content:stockfeel:a'])
+    expect(s.removed).toContain('content:stockfeel:a')
     expect(s.store.has('content:stockfeel:b')).toBe(true)
   })
 
@@ -129,5 +144,21 @@ describe('invalidateContentCache', () => {
     await s.setItem(cacheKey('content', 'stockfeel:a'), 1)
     await invalidateContentCache(s, 'stockfeel', 'a')
     expect(s.store.has('entity:stockfeel')).toBe(true)
+  })
+
+  it('sweeps directory variants for the same entity', async () => {
+    const s = new FakeStorage()
+    await s.setItem(cacheKey('content', 'stockfeel:a'), 1)
+    await s.setItem(cacheKey('directory', 'stockfeel:p1s100t'), { d: 1 })
+    await s.setItem(cacheKey('directory', 'stockfeel:p2s100t'), { d: 2 })
+    // Other entity's directory must NOT be touched.
+    await s.setItem(cacheKey('directory', 'other:p1s100t'), { d: 3 })
+
+    await invalidateContentCache(s, 'stockfeel', 'a')
+
+    expect(s.removed).toContain('content:stockfeel:a')
+    expect(s.removed).toContain('directory:stockfeel:p1s100t')
+    expect(s.removed).toContain('directory:stockfeel:p2s100t')
+    expect(s.removed).not.toContain('directory:other:p1s100t')
   })
 })
