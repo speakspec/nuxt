@@ -12,9 +12,7 @@
 // usage shows up under the customer's account in SpeakSpec analytics.
 
 import { ofetch, FetchError } from 'ofetch'
-
-const SDK_VERSION = '0.0.1'
-const SDK_USER_AGENT = `@speakspec/nuxt/${SDK_VERSION}`
+import { SDK_USER_AGENT } from '../../version'
 
 export interface FetchContentOptions {
   endpoint: string

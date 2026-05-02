@@ -11,14 +11,7 @@
 // customer's API key in SpeakSpec analytics.
 
 import { ofetch, FetchError } from 'ofetch'
-
-// TODO(3.6): wire SDK_VERSION from package.json via unbuild's `replace`
-// plugin (or generate a `version.ts` in `dev:prepare`). Currently a
-// hardcoded constant that will silently drift on the next package
-// version bump. Test asserts the format `@speakspec/nuxt/<digit>` so
-// at least typos in the constant are caught.
-const SDK_VERSION = '0.0.1'
-const SDK_USER_AGENT = `@speakspec/nuxt/${SDK_VERSION}`
+import { SDK_USER_AGENT } from '../../version'
 
 export interface FetchOptions {
   endpoint: string

@@ -6,6 +6,7 @@
 // Once Node bumps to 22 LTS, switch back to createConfigForNuxt({...}).
 
 import js from '@eslint/js'
+import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
@@ -33,6 +34,14 @@ export default tseslint.config(
       // runtime (Step 3.0 is scaffold). Don't fail on "unused" until
       // 3.1+ wires them.
       '@typescript-eslint/no-empty-object-type': 'off',
+    },
+  },
+  // CLI bin + build scripts are pure Node ESM — give them Node
+  // globals (process, console, ...) so no-undef stops complaining.
+  {
+    files: ['bin/**/*.mjs', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
 )
