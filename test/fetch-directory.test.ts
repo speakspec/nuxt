@@ -51,6 +51,19 @@ describe('fetchContentDirectory', () => {
     expect(url).toContain('type=article')
   })
 
+  it('forwards §8.8 optional language and updated_since filters', async () => {
+    mockedRaw.mockResolvedValueOnce({ _data: {}, headers: new Headers() })
+    await fetchContentDirectory({
+      endpoint: 'https://api.speakspec.com',
+      entityId: 'x',
+      language: 'zh-TW',
+      updatedSince: '2026-01-01T00:00:00Z',
+    })
+    const url = mockedRaw.mock.calls[0]![0] as string
+    expect(url).toContain('language=zh-TW')
+    expect(url).toContain('updated_since=2026-01-01T00%3A00%3A00Z')
+  })
+
   it('attaches Authorization header when apiKey is supplied', async () => {
     mockedRaw.mockResolvedValueOnce({ _data: {}, headers: new Headers() })
     await fetchContentDirectory({

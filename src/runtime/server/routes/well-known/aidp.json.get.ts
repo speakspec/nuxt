@@ -20,13 +20,15 @@
 // remains portable across host projects that may have different
 // auto-import configurations or h3 versions.
 
-import { defineEventHandler, setResponseHeader, createError, getHeader } from 'h3'
+import { defineEventHandler, createError, getHeader } from 'h3'
 import { useStorage } from 'nitropack/runtime'
 import { useRuntimeConfig } from '#imports'
 import { fetchEntityDirective } from '../../utils/fetch-directive'
 import {
   cacheKey,
   isFresh,
+  isUpstream4xx,
+  respondWithCache,
   STORAGE_NAMESPACE,
   DEFAULT_CACHE_TTL_MS,
   type CachedBundle,
@@ -45,19 +47,19 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const inboundIfNoneMatch = getHeader(event, 'if-none-match')
   const storage = useStorage(STORAGE_NAMESPACE)
   const key = cacheKey('entity', config.entityId)
   const cached = (await storage.getItem(key)) as CachedBundle<Record<string, unknown>> | null
 
   if (isFresh(cached)) {
-    setResponseHeader(event, 'ETag', cached!.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return cached!.payload
+    return respondWithCache(event, cached!.etag, cached!.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
-  // Conditional GET: send the prior ETag so the upstream can reply
-  // 304 when nothing has changed (saves the JSON parse roundtrip).
-  const ifNoneMatch = cached?.etag || getHeader(event, 'if-none-match') || undefined
+  // Conditional GET against upstream uses the cached etag (the only
+  // value the upstream knows). The inbound `If-None-Match` is honoured
+  // at this server layer per §8.7 once we know the response etag.
+  const upstreamIfNoneMatch = cached?.etag || undefined
 
   let result
   try {
@@ -65,18 +67,22 @@ export default defineEventHandler(async (event) => {
       endpoint: config.endpoint,
       entityId: config.entityId,
       apiKey: config.apiKey,
-      ifNoneMatch,
+      ifNoneMatch: upstreamIfNoneMatch,
     })
   }
-  catch {
-    // Upstream unreachable. If we have any cached bundle (even
-    // expired-by-TTL), serve it with a shorter Cache-Control so the
-    // next request retries soon. This matches the
-    // stale-while-revalidate intent at the SDK layer.
+  catch (err) {
+    // Upstream 4xx → operator action required (bad apiKey, entity
+    // removed, etc). Do NOT serve stale; surface a 502 with detail so
+    // the customer's monitoring catches it. 5xx / network → serve
+    // stale with shorter Cache-Control so the next hit retries.
+    if (isUpstream4xx(err)) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: `AIDP upstream rejected the directive fetch (${(err as { response?: { status?: number } }).response?.status})`,
+      })
+    }
     if (cached) {
-      setResponseHeader(event, 'ETag', cached.etag)
-      setResponseHeader(event, 'Cache-Control', STALE_CACHE_CONTROL)
-      return cached.payload
+      return respondWithCache(event, cached.etag, cached.payload, STALE_CACHE_CONTROL, inboundIfNoneMatch)
     }
     throw createError({
       statusCode: 502,
@@ -91,9 +97,7 @@ export default defineEventHandler(async (event) => {
       expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
     }
     await storage.setItem(key, refreshed)
-    setResponseHeader(event, 'ETag', refreshed.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return refreshed.payload
+    return respondWithCache(event, refreshed.etag, refreshed.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
   if (!result.payload) {
@@ -109,10 +113,5 @@ export default defineEventHandler(async (event) => {
     expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
   }
   await storage.setItem(key, fresh)
-
-  if (fresh.etag) {
-    setResponseHeader(event, 'ETag', fresh.etag)
-  }
-  setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-  return fresh.payload
+  return respondWithCache(event, fresh.etag, fresh.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
 })

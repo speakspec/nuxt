@@ -29,9 +29,17 @@ export default defineNuxtPlugin(() => {
   const endpoint = privateConfig?.endpoint
 
   if (!siteOrigin || !endpoint) {
-    // Module not configured; skip silently. The route handlers will
-    // surface 503s if anything tries to hit them, which is the better
-    // place to fail loudly.
+    // Module not configured. Route handlers surface 503s on hit; we
+    // additionally warn once at SSR-startup time in dev so customers
+    // notice the missing siteOrigin during local development rather
+    // than discovering the gap when an AI crawler skips their site.
+    if (import.meta.dev && import.meta.server) {
+      console.warn(
+        '[@speakspec/nuxt] siteOrigin / endpoint not configured — '
+        + '<link rel="aidp"> tags will not be emitted. Set `speakspec.siteOrigin` '
+        + 'in nuxt.config.ts (typically from NUXT_PUBLIC_SITE_URL).',
+      )
+    }
     return
   }
 

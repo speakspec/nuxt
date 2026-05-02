@@ -128,6 +128,7 @@ export default defineNuxtModule<ModuleOptions>({
     // /.well-known/aidp.json — entity directive cache + ETag wrapper.
     addServerHandler({
       route: '/.well-known/aidp.json',
+      method: 'get',
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp.json.get'),
     })
 
@@ -137,20 +138,24 @@ export default defineNuxtModule<ModuleOptions>({
     // documented in the spec. Step 3.2.
     addServerHandler({
       route: '/.well-known/aidp/content/:id',
+      method: 'get',
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/[id].get'),
     })
 
     // /.well-known/aidp/content/ — paginated content directory per
-    // §8.8. Spec mandates the trailing slash; we register both forms
-    // so agents that drop it don't 404. Step 3.3.
-    const directoryHandler = resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get')
+    // §8.8 (the trailing slash is mandated by the spec). The
+    // no-trailing-slash form 301-redirects to the canonical URL so
+    // agents that drop it land on the right resource without
+    // diverging cache-key namespaces.
     addServerHandler({
       route: '/.well-known/aidp/content/',
-      handler: directoryHandler,
+      method: 'get',
+      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get'),
     })
     addServerHandler({
       route: '/.well-known/aidp/content',
-      handler: directoryHandler,
+      method: 'get',
+      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.redirect'),
     })
 
     // POST /api/_aidp/invalidate — receives §8.10 webhooks from

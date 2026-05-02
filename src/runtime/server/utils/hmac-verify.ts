@@ -57,7 +57,22 @@ export function isTimestampFresh(timestamp: string, windowMs: number = 5 * 60 * 
   return Math.abs(Date.now() - ts) <= windowMs
 }
 
-/** Strip the `urn:aidp:entity:` URN prefix to recover the bare slug. */
+// Slug rule mirrors aidp-server's slug_validator.go: lowercase
+// alphanumerics and hyphens, no leading or trailing hyphen.
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+
+/**
+ * Strip the `urn:aidp:entity:` URN prefix to recover the bare slug.
+ * If the input doesn't match the URN form, returns it unchanged. The
+ * result is validated against the canonical slug rule and rejected
+ * with a descriptive error when malformed — that way a future server
+ * change to a different URN scheme (e.g. `urn:speakspec:entity:foo`)
+ * fails loudly here instead of writing junk into the cache namespace.
+ */
 export function urnToSlug(entityId: string): string {
-  return entityId.replace(/^urn:aidp:entity:/, '')
+  const slug = entityId.replace(/^urn:aidp:entity:/, '')
+  if (!SLUG_RE.test(slug)) {
+    throw new Error(`urnToSlug: "${entityId}" did not produce a valid AIDP slug (got "${slug}")`)
+  }
+  return slug
 }

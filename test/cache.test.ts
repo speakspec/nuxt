@@ -1,13 +1,25 @@
 import { describe, it, expect } from 'vitest'
+import { createEvent } from 'h3'
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import {
   cacheKey,
   isFresh,
+  isUpstream4xx,
+  etagMatches,
+  respondWithCache,
   DEFAULT_CACHE_TTL_MS,
   invalidateEntityCache,
   invalidateContentCache,
   type CachedBundle,
   type CacheStorage,
 } from '../src/runtime/server/utils/cache'
+
+function fakeEvent() {
+  const req = new IncomingMessage(new Socket())
+  const res = new ServerResponse(req)
+  return createEvent(req, res) as unknown as Parameters<typeof respondWithCache>[0]
+}
 
 describe('cacheKey', () => {
   it('namespaces scope and id with a colon', () => {
@@ -125,6 +137,83 @@ describe('invalidateEntityCache', () => {
     // The entity key itself is unconditionally requested for removal,
     // so the storage call count is 1 even when the key doesn't exist.
     expect(s.removed).toEqual(['entity:nobody'])
+  })
+})
+
+describe('etagMatches', () => {
+  it('matches identical strong tags', () => {
+    expect(etagMatches('"abc"', '"abc"')).toBe(true)
+  })
+  it('matches identical weak tags', () => {
+    expect(etagMatches('W/"abc"', 'W/"abc"')).toBe(true)
+  })
+  it('matches a weak tag against a strong tag with the same opaque value (RFC 7232 §2.3.2 weak compare)', () => {
+    expect(etagMatches('W/"abc"', '"abc"')).toBe(true)
+    expect(etagMatches('"abc"', 'W/"abc"')).toBe(true)
+  })
+  it('does not match different values', () => {
+    expect(etagMatches('"abc"', '"def"')).toBe(false)
+  })
+  it('returns false on missing inputs', () => {
+    expect(etagMatches('', '"abc"')).toBe(false)
+    expect(etagMatches('"abc"', '')).toBe(false)
+    expect(etagMatches(undefined, '"abc"')).toBe(false)
+    expect(etagMatches(null, null)).toBe(false)
+  })
+})
+
+describe('respondWithCache', () => {
+  it('returns the payload and writes ETag + Cache-Control when no inbound match', () => {
+    const event = fakeEvent()
+    const out = respondWithCache(event, '"abc"', { hello: 'world' }, 'public, max-age=60', undefined)
+    expect(out).toEqual({ hello: 'world' })
+    expect(event.node.res.getHeader('ETag')).toBe('"abc"')
+    expect(event.node.res.getHeader('Cache-Control')).toBe('public, max-age=60')
+    expect(event.node.res.statusCode).toBe(200)
+  })
+
+  it('returns null and sets 304 when the inbound If-None-Match matches', () => {
+    const event = fakeEvent()
+    const out = respondWithCache(event, '"abc"', { hello: 'world' }, 'public, max-age=60', '"abc"')
+    expect(out).toBeNull()
+    expect(event.node.res.statusCode).toBe(304)
+    // §8.7 304 response still carries the validators per RFC 7232 §4.1
+    expect(event.node.res.getHeader('ETag')).toBe('"abc"')
+    expect(event.node.res.getHeader('Cache-Control')).toBe('public, max-age=60')
+  })
+
+  it('treats W/"abc" inbound and "abc" current as a match (weak compare)', () => {
+    const event = fakeEvent()
+    const out = respondWithCache(event, '"abc"', {}, 'public, max-age=60', 'W/"abc"')
+    expect(out).toBeNull()
+    expect(event.node.res.statusCode).toBe(304)
+  })
+
+  it('omits ETag header when the etag is empty', () => {
+    const event = fakeEvent()
+    respondWithCache(event, '', { x: 1 }, 'public, max-age=60', undefined)
+    expect(event.node.res.getHeader('ETag')).toBeUndefined()
+  })
+})
+
+describe('isUpstream4xx', () => {
+  it('detects ofetch-style { response: { status: 4xx } }', () => {
+    expect(isUpstream4xx({ response: { status: 401 } })).toBe(true)
+    expect(isUpstream4xx({ response: { status: 404 } })).toBe(true)
+    expect(isUpstream4xx({ response: { status: 499 } })).toBe(true)
+  })
+  it('detects bare { statusCode: 4xx }', () => {
+    expect(isUpstream4xx({ statusCode: 403 })).toBe(true)
+  })
+  it('returns false for 5xx', () => {
+    expect(isUpstream4xx({ response: { status: 502 } })).toBe(false)
+    expect(isUpstream4xx({ statusCode: 503 })).toBe(false)
+  })
+  it('returns false for non-error shapes', () => {
+    expect(isUpstream4xx(undefined)).toBe(false)
+    expect(isUpstream4xx(null)).toBe(false)
+    expect(isUpstream4xx('not-an-object')).toBe(false)
+    expect(isUpstream4xx(new Error('network'))).toBe(false)
   })
 })
 

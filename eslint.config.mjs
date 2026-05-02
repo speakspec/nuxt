@@ -30,10 +30,6 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-      // Module options struct documents fields that aren't yet used at
-      // runtime (Step 3.0 is scaffold). Don't fail on "unused" until
-      // 3.1+ wires them.
-      '@typescript-eslint/no-empty-object-type': 'off',
     },
   },
   // CLI bin + build scripts are pure Node ESM — give them Node

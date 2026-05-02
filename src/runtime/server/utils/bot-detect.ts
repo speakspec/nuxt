@@ -14,36 +14,45 @@
 //   - Perplexity: https://docs.perplexity.ai/guides/bots
 //   - Common Crawl + Bytedance / Cohere / Diffbot: industry references
 
-const PATTERNS: Array<{ label: string, regex: RegExp }> = [
+/**
+ * Crawler "source" buckets. Logged alongside the matched label so
+ * observability dashboards can filter by trust provider without
+ * maintaining a separate mapping table.
+ */
+export type CrawlerSource = 'openai' | 'anthropic' | 'perplexity' | 'google' | 'commoncrawl' | 'bytedance' | 'cohere' | 'diffbot' | 'apple' | 'meta'
+
+const PATTERNS: Array<{ label: string, source: CrawlerSource, regex: RegExp }> = [
   // OpenAI
-  { label: 'gptbot', regex: /\bGPTBot\b/i },
-  { label: 'chatgpt-user', regex: /\bChatGPT-User\b/i },
-  { label: 'oai-searchbot', regex: /\bOAI-SearchBot\b/i },
+  { label: 'gptbot', source: 'openai', regex: /\bGPTBot\b/i },
+  { label: 'chatgpt-user', source: 'openai', regex: /\bChatGPT-User\b/i },
+  { label: 'oai-searchbot', source: 'openai', regex: /\bOAI-SearchBot\b/i },
   // Anthropic
-  { label: 'claudebot', regex: /\bClaudeBot\b/i },
-  { label: 'claude-web', regex: /\bClaude-Web\b/i },
-  { label: 'anthropic-ai', regex: /\bAnthropic-AI\b/i },
+  { label: 'claudebot', source: 'anthropic', regex: /\bClaudeBot\b/i },
+  { label: 'claude-web', source: 'anthropic', regex: /\bClaude-Web\b/i },
+  { label: 'anthropic-ai', source: 'anthropic', regex: /\bAnthropic-AI\b/i },
   // Perplexity
-  { label: 'perplexitybot', regex: /\bPerplexityBot\b/i },
+  { label: 'perplexitybot', source: 'perplexity', regex: /\bPerplexityBot\b/i },
   // Google AI
-  { label: 'google-extended', regex: /\bGoogle-Extended\b/i },
+  { label: 'google-extended', source: 'google', regex: /\bGoogle-Extended\b/i },
   // Common Crawl (training data)
-  { label: 'ccbot', regex: /\bCCBot\b/i },
+  { label: 'ccbot', source: 'commoncrawl', regex: /\bCCBot\b/i },
   // ByteDance
-  { label: 'bytespider', regex: /\bBytespider\b/i },
+  { label: 'bytespider', source: 'bytedance', regex: /\bBytespider\b/i },
   // Cohere
-  { label: 'cohere-ai', regex: /\bcohere-ai\b/i },
+  { label: 'cohere-ai', source: 'cohere', regex: /\bcohere-ai\b/i },
   // Diffbot (used by some LLM data pipelines)
-  { label: 'diffbot', regex: /\bDiffbot\b/i },
+  { label: 'diffbot', source: 'diffbot', regex: /\bDiffbot\b/i },
   // Apple
-  { label: 'applebot-extended', regex: /\bApplebot-Extended\b/i },
+  { label: 'applebot-extended', source: 'apple', regex: /\bApplebot-Extended\b/i },
   // Meta
-  { label: 'meta-externalagent', regex: /\bmeta-externalagent\b/i },
+  { label: 'meta-externalagent', source: 'meta', regex: /\bmeta-externalagent\b/i },
 ]
 
 export interface CrawlerMatch {
   /** Lowercased label identifying the matched crawler. */
   label: string
+  /** Trust provider / vendor bucket — useful for log-side aggregation. */
+  source: CrawlerSource
 }
 
 /**
@@ -53,9 +62,9 @@ export interface CrawlerMatch {
  */
 export function detectAICrawler(ua: string | null | undefined): CrawlerMatch | null {
   if (!ua) return null
-  for (const { label, regex } of PATTERNS) {
+  for (const { label, source, regex } of PATTERNS) {
     if (regex.test(ua)) {
-      return { label }
+      return { label, source }
     }
   }
   return null

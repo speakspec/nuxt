@@ -40,6 +40,19 @@ import {
 // negligible security gain. Customers who need stricter replay
 // guarantees should rate-limit /api/_aidp/invalidate at their CDN.
 
+// Body cap. Spec §8.10 webhook payloads are <1 KB. 64 KB is generous
+// headroom for future fields without permitting a CPU-soak attack
+// where a forged multi-megabyte body forces SHA-256 work pre-auth.
+const MAX_WEBHOOK_BODY_BYTES = 64 * 1024
+
+const VALID_SCOPES = new Set(['entity', 'content'])
+
+// §8.10 v0.3 emits a single canonical event name. Reject anything
+// else as defense-in-depth: HMAC catches forgery; a wrong `event`
+// here surfaces a dispatcher bug at integration time rather than
+// silently invalidating a cache key on an unintended trigger.
+const VALID_EVENTS = new Set(['directive.updated'])
+
 interface InvalidationPayload {
   $aidp?: string
   event?: string
@@ -76,11 +89,17 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const rawBody = await readRawBody(event)
-  if (!rawBody) {
+  const rawBody = await readRawBody(event, false)
+  if (!rawBody || rawBody.byteLength === 0) {
     throw createError({ statusCode: 400, statusMessage: 'empty request body' })
   }
-  const bodyString = typeof rawBody === 'string' ? rawBody : Buffer.from(rawBody).toString('utf8')
+  if (rawBody.byteLength > MAX_WEBHOOK_BODY_BYTES) {
+    throw createError({
+      statusCode: 413,
+      statusMessage: `webhook body exceeds ${MAX_WEBHOOK_BODY_BYTES} bytes`,
+    })
+  }
+  const bodyString = Buffer.from(rawBody).toString('utf8')
 
   const valid = verifyHmacSignature({
     secret: config.webhookSecret,
@@ -109,10 +128,34 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'payload missing required fields (scope, entity_id)',
     })
   }
+  if (payload.event && !VALID_EVENTS.has(payload.event)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `unsupported event "${payload.event}" (expected one of: ${[...VALID_EVENTS].join(', ')})`,
+    })
+  }
+  if (!VALID_SCOPES.has(payload.scope)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `unsupported scope "${payload.scope}" (expected entity|content)`,
+    })
+  }
   if (payload.scope === 'content' && !payload.content_id) {
     throw createError({
       statusCode: 400,
       statusMessage: 'scope=content requires content_id',
+    })
+  }
+  // Cross-check the body's `timestamp` field against the
+  // `X-AIDP-Timestamp` header. The Go dispatcher emits both with the
+  // same value; a mismatch indicates the body was tampered with after
+  // signing OR that someone replayed a captured timestamp under a
+  // forged body. The HMAC check already rejects forged bodies, so
+  // this is belt-and-braces — but cheap and useful in audit logs.
+  if (payload.timestamp && payload.timestamp !== timestamp) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'body.timestamp does not match X-AIDP-Timestamp header',
     })
   }
 

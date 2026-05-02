@@ -12,13 +12,16 @@
 // addServerHandler registration handles that — h3 normalises both
 // forms internally.
 
-import { defineEventHandler, getQuery, setResponseHeader, createError, getHeader } from 'h3'
+import { defineEventHandler, getQuery, createError, getHeader } from 'h3'
 import { useStorage } from 'nitropack/runtime'
 import { useRuntimeConfig } from '#imports'
 import { fetchContentDirectory } from '../../../../utils/fetch-directory'
+import { parsePositiveInt } from '../../../../utils/query'
 import {
   cacheKey,
   isFresh,
+  isUpstream4xx,
+  respondWithCache,
   STORAGE_NAMESPACE,
   DEFAULT_CACHE_TTL_MS,
   type CachedBundle,
@@ -27,7 +30,7 @@ import {
 const FRESH_CACHE_CONTROL = 'public, max-age=60, stale-while-revalidate=300'
 const STALE_CACHE_CONTROL = 'public, max-age=10, stale-while-revalidate=60'
 
-const ALLOWED_QUERY = new Set(['page', 'page_size', 'type'])
+const ALLOWED_QUERY = new Set(['page', 'page_size', 'type', 'language', 'updated_since'])
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig().speakspec
@@ -49,27 +52,25 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const page = parseOptionalInt(query.page, 'page')
-  const pageSize = parseOptionalInt(query.page_size, 'page_size')
+  const page = parsePositiveInt(query.page, 'page')
+  const pageSize = parsePositiveInt(query.page_size, 'page_size')
   const contentType = typeof query.type === 'string' ? query.type : undefined
+  const language = typeof query.language === 'string' ? query.language : undefined
+  const updatedSince = typeof query.updated_since === 'string' ? query.updated_since : undefined
 
-  // Cache-key fingerprint shape: `p{page}s{pageSize}t{type}`.
-  // Collision-resistance relies on parseOptionalInt rejecting any
-  // non-integer for `page` / `pageSize` — without that guarantee a
-  // value like `?type=s2t` would alias `?page=1&page_size=2`. If the
-  // validator ever loosens, switch to a delimiter-based key.
-  const fingerprint = `p${page ?? ''}s${pageSize ?? ''}t${contentType ?? ''}`
+  // Cache key fingerprint uses JSON to guarantee no aliasing between
+  // distinct filter combinations (e.g. `type=foo` vs `language=foo`).
+  const fingerprint = JSON.stringify({ page, pageSize, contentType, language, updatedSince })
+  const inboundIfNoneMatch = getHeader(event, 'if-none-match')
   const storage = useStorage(STORAGE_NAMESPACE)
   const key = cacheKey('directory', `${config.entityId}:${fingerprint}`)
   const cached = (await storage.getItem(key)) as CachedBundle<Record<string, unknown>> | null
 
   if (isFresh(cached)) {
-    setResponseHeader(event, 'ETag', cached!.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return cached!.payload
+    return respondWithCache(event, cached!.etag, cached!.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
-  const ifNoneMatch = cached?.etag || getHeader(event, 'if-none-match') || undefined
+  const upstreamIfNoneMatch = cached?.etag || undefined
 
   let result
   try {
@@ -80,14 +81,20 @@ export default defineEventHandler(async (event) => {
       page,
       pageSize,
       contentType,
-      ifNoneMatch,
+      language,
+      updatedSince,
+      ifNoneMatch: upstreamIfNoneMatch,
     })
   }
-  catch {
+  catch (err) {
+    if (isUpstream4xx(err)) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: `AIDP upstream rejected the directory fetch (${(err as { response?: { status?: number } }).response?.status})`,
+      })
+    }
     if (cached) {
-      setResponseHeader(event, 'ETag', cached.etag)
-      setResponseHeader(event, 'Cache-Control', STALE_CACHE_CONTROL)
-      return cached.payload
+      return respondWithCache(event, cached.etag, cached.payload, STALE_CACHE_CONTROL, inboundIfNoneMatch)
     }
     throw createError({
       statusCode: 502,
@@ -102,9 +109,7 @@ export default defineEventHandler(async (event) => {
       expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
     }
     await storage.setItem(key, refreshed)
-    setResponseHeader(event, 'ETag', refreshed.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return refreshed.payload
+    return respondWithCache(event, refreshed.etag, refreshed.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
   if (!result.payload) {
@@ -120,22 +125,6 @@ export default defineEventHandler(async (event) => {
     expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
   }
   await storage.setItem(key, fresh)
-
-  if (fresh.etag) {
-    setResponseHeader(event, 'ETag', fresh.etag)
-  }
-  setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-  return fresh.payload
+  return respondWithCache(event, fresh.etag, fresh.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
 })
 
-function parseOptionalInt(value: unknown, name: string): number | undefined {
-  if (value === undefined || value === null || value === '') return undefined
-  if (Array.isArray(value)) {
-    throw createError({ statusCode: 400, statusMessage: `${name} must be a single value` })
-  }
-  const n = Number(value)
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
-    throw createError({ statusCode: 400, statusMessage: `${name} must be a non-negative integer` })
-  }
-  return n
-}

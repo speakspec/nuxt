@@ -26,12 +26,18 @@ export default defineEventHandler((event) => {
   const matched = detectAICrawler(ua)
   if (!matched) return
 
-  console.log(JSON.stringify({
+  // Build the impression record. `entity_id` is omitted (rather than
+  // logged as an empty string) when the module isn't configured —
+  // empty fields are noise for log aggregation.
+  const impression: Record<string, unknown> = {
     msg: 'aidp.crawler_impression',
-    entity_id: config.entityId ?? '',
     crawler: matched.label,
+    crawler_source: matched.source,
     path,
     user_agent: ua.slice(0, 256),
     ts: new Date().toISOString(),
-  }))
+  }
+  if (config?.entityId) impression.entity_id = config.entityId
+
+  console.log(JSON.stringify(impression))
 })

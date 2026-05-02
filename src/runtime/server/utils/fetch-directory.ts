@@ -15,6 +15,11 @@ export interface FetchDirectoryOptions {
   page?: number
   pageSize?: number
   contentType?: string
+  /** §8.8 optional filter: BCP 47 language tag. */
+  language?: string
+  /** §8.8 optional filter: RFC 3339 timestamp; only items updated
+   *  strictly after this point are returned. */
+  updatedSince?: string
   ifNoneMatch?: string
   timeoutMs?: number
 }
@@ -31,6 +36,8 @@ export async function fetchContentDirectory(opts: FetchDirectoryOptions): Promis
   if (typeof opts.page === 'number') params.set('page', String(opts.page))
   if (typeof opts.pageSize === 'number') params.set('page_size', String(opts.pageSize))
   if (opts.contentType) params.set('type', opts.contentType)
+  if (opts.language) params.set('language', opts.language)
+  if (opts.updatedSince) params.set('updated_since', opts.updatedSince)
   const url = params.size > 0 ? `${base}?${params.toString()}` : base
 
   const headers: Record<string, string> = {

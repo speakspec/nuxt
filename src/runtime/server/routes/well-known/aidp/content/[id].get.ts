@@ -14,13 +14,15 @@
 // captures `:id` as the entire path segment verbatim (including the
 // `.json` suffix), so the handler strips `.json` before lookup.
 
-import { defineEventHandler, setResponseHeader, createError, getHeader, getRouterParam } from 'h3'
+import { defineEventHandler, createError, getHeader, getRouterParam } from 'h3'
 import { useStorage } from 'nitropack/runtime'
 import { useRuntimeConfig } from '#imports'
 import { fetchContentEnvelope } from '../../../../utils/fetch-content'
 import {
   cacheKey,
   isFresh,
+  isUpstream4xx,
+  respondWithCache,
   STORAGE_NAMESPACE,
   DEFAULT_CACHE_TTL_MS,
   type CachedBundle,
@@ -53,17 +55,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const inboundIfNoneMatch = getHeader(event, 'if-none-match')
   const storage = useStorage(STORAGE_NAMESPACE)
   const key = cacheKey('content', `${config.entityId}:${contentId}`)
   const cached = (await storage.getItem(key)) as CachedBundle<Record<string, unknown>> | null
 
   if (isFresh(cached)) {
-    setResponseHeader(event, 'ETag', cached!.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return cached!.payload
+    return respondWithCache(event, cached!.etag, cached!.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
-  const ifNoneMatch = cached?.etag || getHeader(event, 'if-none-match') || undefined
+  const upstreamIfNoneMatch = cached?.etag || undefined
 
   let result
   try {
@@ -72,14 +73,18 @@ export default defineEventHandler(async (event) => {
       entityId: config.entityId,
       contentId,
       apiKey: config.apiKey,
-      ifNoneMatch,
+      ifNoneMatch: upstreamIfNoneMatch,
     })
   }
-  catch {
+  catch (err) {
+    if (isUpstream4xx(err)) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: `AIDP upstream rejected the content fetch (${(err as { response?: { status?: number } }).response?.status})`,
+      })
+    }
     if (cached) {
-      setResponseHeader(event, 'ETag', cached.etag)
-      setResponseHeader(event, 'Cache-Control', STALE_CACHE_CONTROL)
-      return cached.payload
+      return respondWithCache(event, cached.etag, cached.payload, STALE_CACHE_CONTROL, inboundIfNoneMatch)
     }
     throw createError({
       statusCode: 502,
@@ -94,9 +99,7 @@ export default defineEventHandler(async (event) => {
       expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
     }
     await storage.setItem(key, refreshed)
-    setResponseHeader(event, 'ETag', refreshed.etag)
-    setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-    return refreshed.payload
+    return respondWithCache(event, refreshed.etag, refreshed.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
   }
 
   if (!result.payload) {
@@ -112,10 +115,5 @@ export default defineEventHandler(async (event) => {
     expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
   }
   await storage.setItem(key, fresh)
-
-  if (fresh.etag) {
-    setResponseHeader(event, 'ETag', fresh.etag)
-  }
-  setResponseHeader(event, 'Cache-Control', FRESH_CACHE_CONTROL)
-  return fresh.payload
+  return respondWithCache(event, fresh.etag, fresh.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
 })

@@ -124,15 +124,28 @@ describe('urnToSlug', () => {
     expect(urnToSlug('urn:aidp:entity:stockfeel')).toBe('stockfeel')
   })
 
+  it('accepts hyphenated slugs', () => {
+    expect(urnToSlug('urn:aidp:entity:my-entity-2026')).toBe('my-entity-2026')
+  })
+
   it('passes bare slugs through unchanged', () => {
     expect(urnToSlug('stockfeel')).toBe('stockfeel')
   })
 
-  it('only strips the leading prefix, not occurrences inside', () => {
-    expect(urnToSlug('urn:aidp:entity:foo:bar')).toBe('foo:bar')
+  it('throws on URN with extra colons (invalid slug shape)', () => {
+    expect(() => urnToSlug('urn:aidp:entity:foo:bar')).toThrow(/did not produce a valid AIDP slug/)
   })
 
-  it('returns empty string for the prefix alone', () => {
-    expect(urnToSlug('urn:aidp:entity:')).toBe('')
+  it('throws on the prefix alone (empty slug)', () => {
+    expect(() => urnToSlug('urn:aidp:entity:')).toThrow(/did not produce a valid AIDP slug/)
+  })
+
+  it('throws on uppercase / underscored input that violates slug rule', () => {
+    expect(() => urnToSlug('urn:aidp:entity:Foo_Bar')).toThrow(/did not produce a valid AIDP slug/)
+  })
+
+  it('throws on a slug with leading or trailing hyphen', () => {
+    expect(() => urnToSlug('-leading')).toThrow(/did not produce a valid AIDP slug/)
+    expect(() => urnToSlug('trailing-')).toThrow(/did not produce a valid AIDP slug/)
   })
 })

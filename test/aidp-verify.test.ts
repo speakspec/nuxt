@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi, afterEach } from 'vitest'
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import {
@@ -265,6 +265,26 @@ describe('verifyBundle', () => {
     expect(verifyBundle(signed, makeJwks())).toMatchObject({ valid: false, reason: 'canonical-error' })
   })
 
+  it('returns missing-canonical-url when _proof.canonical_url is absent', () => {
+    const { signed } = signEnvelope(baseEnv, STD_FIELDS)
+    delete (signed._proof as AIDPProof).canonical_url
+    expect(verifyBundle(signed, makeJwks())).toMatchObject({ valid: false, reason: 'missing-canonical-url' })
+  })
+
+  it('returns key-out-of-window when issued_at precedes JWKS valid_from', () => {
+    const { signed } = signEnvelope(baseEnv, STD_FIELDS)
+    const j = makeJwks()
+    j.keys[0]!.valid_from = '2050-01-01T00:00:00Z'
+    expect(verifyBundle(signed, j)).toMatchObject({ valid: false, reason: 'key-out-of-window' })
+  })
+
+  it('returns key-out-of-window when issued_at follows JWKS valid_until', () => {
+    const { signed } = signEnvelope(baseEnv, STD_FIELDS)
+    const j = makeJwks()
+    j.keys[0]!.valid_until = '2020-01-01T00:00:00Z'
+    expect(verifyBundle(signed, j)).toMatchObject({ valid: false, reason: 'key-out-of-window' })
+  })
+
   it('refuses self-referential signed_fields paths (_proof / _proofs)', () => {
     // A malicious signer that lists `_proof.signature` in signed_fields
     // would otherwise produce a signature over its own signature
@@ -323,6 +343,7 @@ describe('buildCanonicalInput', () => {
 describe('fetchJson + fetchJwks + fetchRevocationList', () => {
   const fetchSpy = vi.spyOn(globalThis, 'fetch')
   afterEach(() => fetchSpy.mockReset())
+  afterAll(() => fetchSpy.mockRestore())
 
   it('fetches JSON happy path', async () => {
     fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: 1 }), {

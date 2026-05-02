@@ -15,9 +15,17 @@ Phase 3 of the AIDP 0.3 PKI rollout. All sub-steps below land in this branch.
 | 3.1.5 Webhook receiver (HMAC + replay protection) | done |
 | 3.2 Content endpoint + content source adapter | done |
 | 3.3 Content directory route | done |
-| 3.4 Link tag injection + `<AidpDirective>` component | done |
+| 3.4 Link tag injection + `<AidpDirective>` component | done (link tags only; §8.9 inline embedding deferred) |
 | 3.5 AI-bot detection middleware (opt-in) | done |
 | 3.6 Validator + CLI + docs | done |
+
+**3.4 deferral note.** The AIDP 0.3 spec §8.9 also describes an
+optional `<script type="application/aidp+json">` inline-embedding
+mode where a signed pointer (or a signed-full payload) is dropped
+straight into the page HTML. Phase 3 ships only the link-tag
+discovery surface (§8.5); inline embedding will follow in a later
+phase. Customer sites publish the signed pointer at the per-content
+endpoint today, which is sufficient for §8.7-aware AI agents.
 
 ## Install
 
@@ -47,7 +55,7 @@ export default defineNuxtConfig({
 |---|---|---|---|
 | `entityId` | yes | — | SpeakSpec entity slug (lowercase alphanumerics + hyphens) |
 | `apiKey` | yes | — | SpeakSpec API key (`ssk_…`); server-side only |
-| `webhookSecret` | yes | — | Shared secret used to verify §8.10 cache-invalidation webhooks |
+| `webhookSecret` | yes (when `/api/_aidp/invalidate` is reachable) | — | Shared secret used to verify §8.10 cache-invalidation webhooks; the receiver returns 503 when it's unset |
 | `siteOrigin` | recommended | — | Your site's canonical origin; used for absolute URLs in emitted payloads |
 | `endpoint` | no | `https://api.speakspec.com` | Override for staging or self-hosted SpeakSpec |
 | `botTracking.enabled` | no | `false` | Turn on the AI-crawler detection middleware |
@@ -106,8 +114,10 @@ Listing / search / dynamic pages should NOT bind — there is no single content 
 Set `speakspec.botTracking.enabled = true` and the SDK classifies inbound requests against 14 known AI-crawler patterns (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, Bytespider, etc.). Each match emits a structured JSON line on stdout:
 
 ```json
-{"msg":"aidp.crawler_impression","entity_id":"stockfeel","crawler":"gptbot","path":"/articles/etf-explainer","user_agent":"Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)","ts":"2026-05-01T07:53:27.000Z"}
+{"msg":"aidp.crawler_impression","entity_id":"stockfeel","crawler":"gptbot","crawler_source":"openai","path":"/articles/etf-explainer","user_agent":"Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)","ts":"2026-05-01T07:53:27.000Z"}
 ```
+
+`crawler_source` aggregates labels by trust provider (`openai`, `anthropic`, `perplexity`, `google`, `commoncrawl`, `bytedance`, `cohere`, `diffbot`, `apple`, `meta`) — useful for log-side filtering. `entity_id` is omitted when the module isn't configured.
 
 Pipe these into your observability stack (Loki, Datadog, BigQuery, ...) — the SDK does not couple to any specific analytics backend. Excluded by default: `/_nuxt/`, `/api/_aidp/`. Add more under `botTracking.excludePaths`.
 
@@ -126,11 +136,11 @@ pnpm speakspec verify-bundle https://yoursite.com/.well-known/aidp/content/etf-e
 pnpm speakspec test-revocation https://api.speakspec.com
 ```
 
-Each command exits 0 on success and 1 on any failure with a structured `reason=…` on stderr (`bad-signature`, `expired`, `unknown-kid`, `bad-algorithm`, `missing-proof`, `shape-error`, `bad-key`).
+Each command exits 0 on success and 1 on any failure with a structured `reason=…` on stderr. Possible reasons (matching the spec failure modes): `missing-proof`, `mixed-proof`, `multi-proof-not-supported`, `missing-canonical-url`, `bad-algorithm`, `unknown-kid`, `key-out-of-window`, `shape-error`, `canonical-error`, `bad-key`, `bad-signature`, `expired`.
 
 ## Operations notes
 
-- **Rate-limit `/api/_aidp/invalidate` at your CDN / WAF.** The route is HMAC-authenticated (so an attacker without the shared secret cannot evict cache), but the SDK does not throttle requests itself. Without a CDN-side limit an attacker can pin the customer's CPU on SHA-256 verification of forged payloads. SpeakSpec's dispatcher delivers at most a few webhooks per minute under normal operation, so a tight limit (e.g. 60 req/min per source IP) is safe.
+- **Rate-limit `/api/_aidp/invalidate` at your CDN / WAF.** The route is HMAC-authenticated (so an attacker without the shared secret cannot evict cache) and caps inbound bodies at 64 KB before the HMAC pass to bound the pre-auth CPU cost. Without a CDN-side limit an attacker can still drive SHA-256 work on small forged payloads. SpeakSpec's dispatcher delivers at most a few webhooks per minute under normal operation, so a tight limit (e.g. 60 req/min per source IP) is safe. Customers running their own WAF can additionally allowlist SpeakSpec's egress IP (publish a single CIDR for production deliveries) to reject everything else outright.
 - **Cache layer is Nitro `useStorage('speakspec')`.** Per-key TTLs follow `min(5min, _proof.expires_at)`; the webhook receiver invalidates on `directive` / `content` / `entity` events.
 - **All upstream fetches are SSR-time.** The SDK never bakes signed bundles into the build artefact; cache misses fetch live, cache hits + `If-None-Match` keep the round-trip cheap.
 

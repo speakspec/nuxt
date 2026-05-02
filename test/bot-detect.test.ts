@@ -6,26 +6,26 @@ import {
 } from '../src/runtime/server/utils/bot-detect'
 
 describe('detectAICrawler', () => {
-  const positive: Array<[string, string]> = [
-    ['Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)', 'gptbot'],
-    ['Mozilla/5.0 ChatGPT-User/1.0', 'chatgpt-user'],
-    ['Mozilla/5.0 (compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)', 'oai-searchbot'],
-    ['Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 'claudebot'],
-    ['Mozilla/5.0 (compatible; Claude-Web/1.0; +https://claude.ai)', 'claude-web'],
-    ['Mozilla/5.0 (compatible; Anthropic-AI/1.0)', 'anthropic-ai'],
-    ['Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai)', 'perplexitybot'],
-    ['Mozilla/5.0 (compatible; Google-Extended)', 'google-extended'],
-    ['Mozilla/5.0 (compatible; CCBot/2.0; +https://commoncrawl.org/faq)', 'ccbot'],
-    ['Mozilla/5.0 (compatible; Bytespider; spider-feedback@bytedance.com)', 'bytespider'],
-    ['Mozilla/5.0 cohere-ai', 'cohere-ai'],
-    ['Mozilla/5.0 (compatible; Diffbot/0.1)', 'diffbot'],
-    ['Mozilla/5.0 (compatible; Applebot-Extended)', 'applebot-extended'],
-    ['Mozilla/5.0 (compatible; meta-externalagent/1.1)', 'meta-externalagent'],
+  const positive: Array<[string, string, string]> = [
+    ['Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)', 'gptbot', 'openai'],
+    ['Mozilla/5.0 ChatGPT-User/1.0', 'chatgpt-user', 'openai'],
+    ['Mozilla/5.0 (compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot)', 'oai-searchbot', 'openai'],
+    ['Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 'claudebot', 'anthropic'],
+    ['Mozilla/5.0 (compatible; Claude-Web/1.0; +https://claude.ai)', 'claude-web', 'anthropic'],
+    ['Mozilla/5.0 (compatible; Anthropic-AI/1.0)', 'anthropic-ai', 'anthropic'],
+    ['Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai)', 'perplexitybot', 'perplexity'],
+    ['Mozilla/5.0 (compatible; Google-Extended)', 'google-extended', 'google'],
+    ['Mozilla/5.0 (compatible; CCBot/2.0; +https://commoncrawl.org/faq)', 'ccbot', 'commoncrawl'],
+    ['Mozilla/5.0 (compatible; Bytespider; spider-feedback@bytedance.com)', 'bytespider', 'bytedance'],
+    ['Mozilla/5.0 cohere-ai', 'cohere-ai', 'cohere'],
+    ['Mozilla/5.0 (compatible; Diffbot/0.1)', 'diffbot', 'diffbot'],
+    ['Mozilla/5.0 (compatible; Applebot-Extended)', 'applebot-extended', 'apple'],
+    ['Mozilla/5.0 (compatible; meta-externalagent/1.1)', 'meta-externalagent', 'meta'],
   ]
 
-  for (const [ua, label] of positive) {
-    it(`matches ${label} for ${JSON.stringify(ua)}`, () => {
-      expect(detectAICrawler(ua)).toEqual({ label })
+  for (const [ua, label, source] of positive) {
+    it(`matches ${label} (${source}) for ${JSON.stringify(ua)}`, () => {
+      expect(detectAICrawler(ua)).toEqual({ label, source })
     })
   }
 

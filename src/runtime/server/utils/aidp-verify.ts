@@ -59,9 +59,28 @@ export interface VerifyOk {
   signedFields: string[]
 }
 
+/**
+ * Discriminated union of every reason a `verifyBundle` can fail. New
+ * reasons must be added here (and to the JSDoc on `verifyBundle`) so
+ * callers stay exhaustive at the type level.
+ */
+export type VerifyFailReason =
+  | 'missing-proof'
+  | 'mixed-proof'
+  | 'multi-proof-not-supported'
+  | 'missing-canonical-url'
+  | 'bad-algorithm'
+  | 'unknown-kid'
+  | 'key-out-of-window'
+  | 'shape-error'
+  | 'canonical-error'
+  | 'bad-key'
+  | 'bad-signature'
+  | 'expired'
+
 export interface VerifyFail {
   valid: false
-  reason: string
+  reason: VerifyFailReason
   detail?: string
 }
 
@@ -104,8 +123,13 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchOptions = {
     if (!res.ok) {
       throw new Error(`GET ${url} → ${res.status} ${res.statusText}`)
     }
+    // Content-Length pre-check is skipped for encoded responses
+    // (gzip, br, ...) — Content-Length there is the compressed size,
+    // which can be much smaller than the post-decode body. The
+    // streaming cap below catches over-large decoded bodies anyway.
     const declared = Number(res.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > maxBytes) {
+    const encoded = !!res.headers.get('content-encoding')
+    if (!encoded && Number.isFinite(declared) && declared > maxBytes) {
       throw new Error(`GET ${url}: response too large (Content-Length ${declared} > cap ${maxBytes})`)
     }
     const buf = await readCapped(res, maxBytes, url)
@@ -248,12 +272,12 @@ export function parseSignature(sig: string): Buffer {
 }
 
 function base64urlToStandard(s: string): string {
-  const std = s.replace(/-/g, '+').replace(/_/g, '/')
-  // Defensive: re-pad even though the spec says "unpadded". Node's
-  // base64 decoder is lenient but Deno / Bun / browser polyfills are
-  // not. The verifier may run under any of those via Nitro presets.
-  const pad = (4 - std.length % 4) % 4
-  return pad ? std + '='.repeat(pad) : std
+  // Inputs reach here only after the strict 86-char length check in
+  // parseSignature, so the padding is always exactly two `=` (since
+  // 86 % 4 === 2). Pad explicitly to satisfy strict base64 decoders
+  // (Deno, Bun, browser polyfills) that reject unpadded input even
+  // when the byte length is otherwise valid.
+  return s.replace(/-/g, '+').replace(/_/g, '/') + '=='
 }
 
 /**
@@ -290,18 +314,29 @@ export function isExpired(expiresAt: string, now: Date = new Date()): boolean {
  * misleading `missing-proof`.
  *
  * Failure modes (each returns `{valid:false, reason}`):
- *   - missing-proof:            payload has no `_proof` and no `_proofs`
- *   - mixed-proof:              both `_proof` and `_proofs` present (§4.8.5
- *                               forbids the combination)
+ *   - missing-proof:             payload has no `_proof` and no `_proofs`
+ *   - mixed-proof:               both `_proof` and `_proofs` present (§4.8.5
+ *                                forbids the combination)
  *   - multi-proof-not-supported: `_proofs` (plural) present without `_proof`
- *   - bad-algorithm:            `_proof.type` !== 'ed25519-jws'
- *   - unknown-kid:              no JWKS entry matches `_proof.key_id`
- *   - bad-signature:            ed25519 verification returned false
- *   - expired:                  now > `_proof.expires_at`
- *   - bad-key:                  JWKS entry exists but has unsupported shape
- *   - shape-error:              signature parsing failed (wrong prefix / length)
- *   - canonical-error:          canonical-input construction threw (e.g.
- *                               object-typed signed_field encountered)
+ *   - missing-canonical-url:     `_proof.canonical_url` absent (§4.8.2 marks
+ *                                it required)
+ *   - bad-algorithm:             `_proof.type` !== 'ed25519-jws'
+ *   - unknown-kid:               no JWKS entry matches `_proof.key_id`
+ *   - key-out-of-window:         JWKS entry exists but `_proof.issued_at`
+ *                                falls outside [valid_from, valid_until]
+ *   - bad-signature:             ed25519 verification returned false
+ *   - expired:                   now > `_proof.expires_at`
+ *   - bad-key:                   JWKS entry exists but has unsupported shape
+ *   - shape-error:               signature parsing failed (wrong prefix / length)
+ *   - canonical-error:           canonical-input construction threw (e.g.
+ *                                object-typed signed_field encountered)
+ *
+ * `_proof.issuer` is intentionally NOT in the canonical signed input
+ * per §4.8.4, so an attacker who controls a JWKS at a different
+ * issuer URL with the same `kid` could in theory substitute the
+ * issuer. Spec-conformant behaviour; callers that don't trust the
+ * issuer field must verify it externally (the CLI surfaces it for
+ * the operator to check).
  */
 export function verifyBundle(payload: Record<string, unknown>, jwks: JWKS, now: Date = new Date()): VerifyResult {
   const proof = payload?._proof as AIDPProof | undefined
@@ -319,9 +354,33 @@ export function verifyBundle(payload: Record<string, unknown>, jwks: JWKS, now: 
     return { valid: false, reason: 'bad-algorithm', detail: `unsupported proof type: ${proof.type}` }
   }
 
+  if (typeof proof.canonical_url !== 'string' || proof.canonical_url.length === 0) {
+    return { valid: false, reason: 'missing-canonical-url', detail: '§4.8.2 requires _proof.canonical_url' }
+  }
+
   const key = findKey(jwks, proof.key_id)
   if (!key) {
     return { valid: false, reason: 'unknown-kid', detail: `kid=${proof.key_id} not found in JWKS` }
+  }
+
+  // §8.11: JWKS already excludes revoked keys, but a stale cached
+  // copy or a misconfigured trust provider could still surface a key
+  // outside its [valid_from, valid_until] window. Reject if the
+  // signature was issued outside the key's validity period.
+  const issuedAtMs = Date.parse(proof.issued_at)
+  if (!Number.isNaN(issuedAtMs)) {
+    if (key.valid_from) {
+      const fromMs = Date.parse(key.valid_from)
+      if (!Number.isNaN(fromMs) && issuedAtMs < fromMs) {
+        return { valid: false, reason: 'key-out-of-window', detail: `issued_at=${proof.issued_at} before key valid_from=${key.valid_from}` }
+      }
+    }
+    if (key.valid_until) {
+      const untilMs = Date.parse(key.valid_until)
+      if (!Number.isNaN(untilMs) && issuedAtMs > untilMs) {
+        return { valid: false, reason: 'key-out-of-window', detail: `issued_at=${proof.issued_at} after key valid_until=${key.valid_until}` }
+      }
+    }
   }
 
   let signature: Buffer
