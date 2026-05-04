@@ -142,20 +142,16 @@ export default defineNuxtModule<ModuleOptions>({
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/[id].get'),
     })
 
-    // /.well-known/aidp/content/ — paginated content directory per
-    // §8.8 (the trailing slash is mandated by the spec). The
-    // no-trailing-slash form 301-redirects to the canonical URL so
-    // agents that drop it land on the right resource without
-    // diverging cache-key namespaces.
-    addServerHandler({
-      route: '/.well-known/aidp/content/',
-      method: 'get',
-      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get'),
-    })
+    // /.well-known/aidp/content — paginated content directory per
+    // §8.8. Spec marks the trailing-slash form as canonical to
+    // distinguish from `/content/{id}`; Nitro/radix3's
+    // non-strict-trailing-slash routing already serves both `/content`
+    // and `/content/` from the same handler, so a single registration
+    // is enough. Cache-key namespace stays unified.
     addServerHandler({
       route: '/.well-known/aidp/content',
       method: 'get',
-      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.redirect'),
+      handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get'),
     })
 
     // POST /api/_aidp/invalidate — receives §8.10 webhooks from
