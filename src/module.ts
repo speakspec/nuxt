@@ -64,6 +64,20 @@ export interface ModuleOptions {
     enabled?: boolean
     /** URL path prefixes to skip (e.g. `/_nuxt/`, `/api/`). */
     excludePaths?: string[]
+    /**
+     * Opt-in: batch impressions to SpeakSpec
+     * (`POST {endpoint}/api/v1/impressions`) so the dashboard
+     * surfaces them. When disabled (default) the middleware prints
+     * impressions to stdout only — host's log pipeline decides what
+     * happens to them.
+     */
+    upload?: {
+      enabled?: boolean
+      batchSize?: number
+      flushIntervalMs?: number
+      maxQueueBytes?: number
+      onError?: 'fallback-stdout' | 'silent'
+    }
   }
 }
 
@@ -110,6 +124,13 @@ export default defineNuxtModule<ModuleOptions>({
         botTracking: {
           enabled: options.botTracking?.enabled ?? false,
           excludePaths: options.botTracking?.excludePaths ?? ['/_nuxt/', '/api/_aidp/'],
+          upload: {
+            enabled: options.botTracking?.upload?.enabled ?? false,
+            batchSize: options.botTracking?.upload?.batchSize ?? 50,
+            flushIntervalMs: options.botTracking?.upload?.flushIntervalMs ?? 60_000,
+            maxQueueBytes: options.botTracking?.upload?.maxQueueBytes ?? 2 * 1024 * 1024,
+            onError: options.botTracking?.upload?.onError ?? 'fallback-stdout',
+          },
         },
       },
     )
@@ -202,6 +223,13 @@ declare module '@nuxt/schema' {
       botTracking: {
         enabled: boolean
         excludePaths: string[]
+        upload: {
+          enabled: boolean
+          batchSize: number
+          flushIntervalMs: number
+          maxQueueBytes: number
+          onError: 'fallback-stdout' | 'silent'
+        }
       }
     }
   }

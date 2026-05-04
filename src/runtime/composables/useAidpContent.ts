@@ -18,7 +18,7 @@
 // the route handlers will 503 / 400 if anything tries to hit them,
 // which is the better place to fail loudly.
 
-import { useHead, useRuntimeConfig } from '#imports'
+import { useHead, useRequestURL, useRuntimeConfig } from '#imports'
 import { contentLink } from '../utils/links'
 
 export interface UseAidpContentOptions {
@@ -33,4 +33,19 @@ export function useAidpContent(opts: UseAidpContentOptions): void {
   useHead({
     link: [contentLink(siteOrigin, opts.id)],
   })
+
+  // Register the (path → content_id) mapping on the SSR side so that
+  // a subsequent AI crawler hit on the same path can be enriched with
+  // content_id by the bot-detect middleware. Skipped on the client —
+  // the registry only exists in the Node process.
+  if (import.meta.server) {
+    void registerOnServer(useRequestURL().pathname, opts.id)
+  }
+}
+
+async function registerOnServer(path: string, contentId: string): Promise<void> {
+  // Dynamic import keeps the client bundle from pulling in
+  // server-only registry code.
+  const { registerContent } = await import('../server/utils/content-registry')
+  registerContent(path, contentId)
 }
