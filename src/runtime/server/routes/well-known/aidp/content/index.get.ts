@@ -18,17 +18,14 @@ import { useRuntimeConfig } from '#imports'
 import { fetchContentDirectory } from '../../../../utils/fetch-directory'
 import { parsePositiveInt } from '../../../../utils/query'
 import {
+  buildCacheControl,
   cacheKey,
   isFresh,
   isUpstream4xx,
   respondWithCache,
   STORAGE_NAMESPACE,
-  DEFAULT_CACHE_TTL_MS,
   type CachedBundle,
 } from '../../../../utils/cache'
-
-const FRESH_CACHE_CONTROL = 'public, max-age=60, stale-while-revalidate=300'
-const STALE_CACHE_CONTROL = 'public, max-age=10, stale-while-revalidate=60'
 
 const ALLOWED_QUERY = new Set(['page', 'page_size', 'type', 'language', 'updated_since'])
 
@@ -41,6 +38,9 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'AIDP module not configured: missing entityId',
     })
   }
+  const FRESH_CACHE_CONTROL = buildCacheControl(config.cache.directoryMaxAge, config.cache.directorySwr)
+  const STALE_CACHE_CONTROL = buildCacheControl(10, 60)
+  const ttlMs = config.cache.ttlSec * 1000
 
   const query = getQuery(event)
   for (const k of Object.keys(query)) {
@@ -106,7 +106,7 @@ export default defineEventHandler(async (event) => {
     const refreshed: CachedBundle<Record<string, unknown>> = {
       payload: cached.payload,
       etag: cached.etag,
-      expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
+      expiresAt: Date.now() + ttlMs,
     }
     await storage.setItem(key, refreshed)
     return respondWithCache(event, refreshed.etag, refreshed.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event) => {
   const fresh: CachedBundle<Record<string, unknown>> = {
     payload: result.payload,
     etag: result.etag,
-    expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
+    expiresAt: Date.now() + ttlMs,
   }
   await storage.setItem(key, fresh)
   return respondWithCache(event, fresh.etag, fresh.payload, FRESH_CACHE_CONTROL, inboundIfNoneMatch)

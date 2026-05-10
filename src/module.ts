@@ -54,6 +54,37 @@ export interface ModuleOptions {
   endpoint?: string
 
   /**
+   * Cache tuning for the SDK's signed-bundle handling. All values are
+   * seconds. Defaults are tuned for fast revocation propagation
+   * (`max-age=60`) at the cost of some origin load. Sites with a
+   * Cloudflare/CloudFront layer in front and high traffic may want to
+   * raise these — note that revocation propagation through downstream
+   * caches is bounded by `entityMaxAge` + `entitySwr`.
+   *
+   * SDK-internal cache (`ttlSec`) is a separate concern: it bounds how
+   * long the SDK process reuses a fetched bundle before re-fetching
+   * upstream. Webhook-driven invalidation (§8.10) clears it instantly
+   * on directive change, so this value is the safety net for missed
+   * webhooks.
+   */
+  cache?: {
+    /** SDK internal cache TTL (seconds). Default 300. */
+    ttlSec?: number
+    /** /.well-known/aidp.json `max-age` (seconds). Default 60. */
+    entityMaxAge?: number
+    /** /.well-known/aidp.json `stale-while-revalidate`. Default 300. */
+    entitySwr?: number
+    /** /.well-known/aidp/content/[id] `max-age`. Default 300. */
+    contentMaxAge?: number
+    /** /.well-known/aidp/content/[id] `stale-while-revalidate`. Default 600. */
+    contentSwr?: number
+    /** /.well-known/aidp/content `max-age`. Default 60. */
+    directoryMaxAge?: number
+    /** /.well-known/aidp/content `stale-while-revalidate`. Default 300. */
+    directorySwr?: number
+  }
+
+  /**
    * AI crawler detection middleware. Off by default. When enabled,
    * the SDK inspects every incoming request's User-Agent and emits a
    * structured `aidp.crawler_impression` JSON log line on matches.
@@ -110,6 +141,27 @@ export default defineNuxtModule<ModuleOptions>({
       )
     }
 
+    // Cache values are typed `number?` but TypeScript doesn't catch
+    // runtime nonsense (negative seconds, non-finite, fractional). Same
+    // belt-and-braces validation as the env-driven sibling SDKs, so a
+    // typo in nuxt.config.ts doesn't push `Cache-Control: max-age=-1`
+    // out to Cloudflare.
+    const sanitizeSec = (raw: unknown, fallback: number, label: string): number => {
+      if (raw === undefined) return fallback
+      if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) {
+        console.warn(`[@speakspec/nuxt] invalid cache.${label}=%o — falling back to ${fallback}`, raw)
+        return fallback
+      }
+      return raw
+    }
+    const cacheTtlSec = sanitizeSec(options.cache?.ttlSec, 300, 'ttlSec')
+    const cacheEntityMaxAge = sanitizeSec(options.cache?.entityMaxAge, 60, 'entityMaxAge')
+    const cacheEntitySwr = sanitizeSec(options.cache?.entitySwr, 300, 'entitySwr')
+    const cacheContentMaxAge = sanitizeSec(options.cache?.contentMaxAge, 300, 'contentMaxAge')
+    const cacheContentSwr = sanitizeSec(options.cache?.contentSwr, 600, 'contentSwr')
+    const cacheDirectoryMaxAge = sanitizeSec(options.cache?.directoryMaxAge, 60, 'directoryMaxAge')
+    const cacheDirectorySwr = sanitizeSec(options.cache?.directorySwr, 300, 'directorySwr')
+
     // Private runtime config (server-side only). apiKey + webhookSecret
     // MUST stay out of the public bundle. defu merges with whatever the
     // host project already set in nuxt.config.ts, so users can plug
@@ -121,6 +173,15 @@ export default defineNuxtModule<ModuleOptions>({
         apiKey: options.apiKey ?? '',
         webhookSecret: options.webhookSecret ?? '',
         endpoint: options.endpoint ?? 'https://api.speakspec.com',
+        cache: {
+          ttlSec: cacheTtlSec,
+          entityMaxAge: cacheEntityMaxAge,
+          entitySwr: cacheEntitySwr,
+          contentMaxAge: cacheContentMaxAge,
+          contentSwr: cacheContentSwr,
+          directoryMaxAge: cacheDirectoryMaxAge,
+          directorySwr: cacheDirectorySwr,
+        },
         botTracking: {
           enabled: options.botTracking?.enabled ?? false,
           excludePaths: options.botTracking?.excludePaths ?? ['/_nuxt/', '/api/_aidp/'],
@@ -220,6 +281,15 @@ declare module '@nuxt/schema' {
       apiKey: string
       webhookSecret: string
       endpoint: string
+      cache: {
+        ttlSec: number
+        entityMaxAge: number
+        entitySwr: number
+        contentMaxAge: number
+        contentSwr: number
+        directoryMaxAge: number
+        directorySwr: number
+      }
       botTracking: {
         enabled: boolean
         excludePaths: string[]

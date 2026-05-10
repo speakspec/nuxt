@@ -60,6 +60,47 @@ export default defineNuxtConfig({
 | `endpoint` | no | `https://api.speakspec.com` | Override for staging or self-hosted SpeakSpec |
 | `botTracking.enabled` | no | `false` | Turn on the AI-crawler detection middleware |
 | `botTracking.excludePaths` | no | `['/_nuxt/', '/api/_aidp/']` | URL prefixes the middleware will skip |
+| `cache.ttlSec` | no | `300` | SDK internal cache TTL (seconds); webhook invalidation is the canonical refresh path |
+| `cache.entityMaxAge` | no | `60` | `/.well-known/aidp.json` `Cache-Control: max-age` (seconds) — bounds revocation propagation through Cloudflare/CloudFront |
+| `cache.entitySwr` | no | `300` | entity `stale-while-revalidate` |
+| `cache.contentMaxAge` | no | `300` | per-content `max-age` |
+| `cache.contentSwr` | no | `600` | per-content `stale-while-revalidate` |
+| `cache.directoryMaxAge` | no | `60` | content directory `max-age` |
+| `cache.directorySwr` | no | `300` | content directory `stale-while-revalidate` |
+
+### Cache tuning
+
+There are two layers of caching — they answer different questions:
+
+| Layer | What it does | Default | Affects |
+|---|---|---|---|
+| **SDK internal** (`cache.ttlSec`) | how long the SDK process reuses a fetched bundle before re-fetching from SpeakSpec | 300s | origin load on SpeakSpec |
+| **`Cache-Control: max-age`** (per-route) | how long downstream caches (Cloudflare, CloudFront, AI agents) reuse the response | 60s entity/directory, 300s content | revocation propagation, CDN cost |
+
+The SDK internal TTL is mostly a safety net for missed webhooks — when SpeakSpec receives a revocation, it sends a webhook that clears the SDK cache instantly. Downstream `max-age` is the real ceiling on how quickly AI agents see the revocation.
+
+**Why entity = 60s but content = 300s by default?** The entity directive (`/.well-known/aidp.json`) is the revocation pivot — when a customer revokes a fact, this is the document AI agents re-fetch first to learn what's still valid. Short `max-age` keeps revocation fast. Per-content envelopes (`/.well-known/aidp/content/{id}.json`) are content-addressed: each `updated_at` produces a new signed bundle, so longer caching is safe.
+
+**Setting `max-age=0`** disables CDN caching for that route but does NOT disable `stale-while-revalidate` — the CDN still serves stale within the SWR window while it revalidates. To fully disable caching, set both `*MaxAge: 0` and `*Swr: 0`.
+
+**Trade-off**: longer `max-age` means lower origin/CDN cost but slower revocation. Worst-case revocation propagation is bounded by `max-age + stale-while-revalidate`. If you want sub-minute revocation across Cloudflare, additionally wire SpeakSpec's webhook to a Cloudflare cache-purge — out of SDK scope.
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@speakspec/nuxt'],
+  speakspec: {
+    entityId: 'your-slug',
+    cache: {
+      // High-traffic site behind Cloudflare: trade revocation speed for cost
+      entityMaxAge: 600,    // 10 min instead of default 1 min
+      entitySwr: 1800,      // 30 min SWR
+      contentMaxAge: 3600,  // 1 hour
+      contentSwr: 7200,     // 2 hour SWR
+    },
+  },
+})
+```
 
 ## What you get
 

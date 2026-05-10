@@ -25,6 +25,12 @@ export const STORAGE_NAMESPACE = 'cache:speakspec'
  */
 export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
 
+/** Build a `Cache-Control` header value from max-age + swr seconds.
+ *  Centralised so the three route handlers don't drift. */
+export function buildCacheControl(maxAge: number, swr: number): string {
+  return `public, max-age=${maxAge}, stale-while-revalidate=${swr}`
+}
+
 export function cacheKey(scope: string, id: string): string {
   return `${scope}:${id}`
 }
