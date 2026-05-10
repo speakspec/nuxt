@@ -9,7 +9,7 @@
 //   - Fallback on permanent failure: emit each impression to stdout so
 //     the customer's log pipeline still sees it
 //
-// The queue is module-scoped — one instance per Nitro process. In
+// The queue is module-scoped — one instance per host process. In
 // serverless deployments with cold starts, items in flight may be
 // lost (acceptable per fire-and-forget design).
 

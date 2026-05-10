@@ -1,12 +1,13 @@
-// In-memory map: path → content_id, populated by useAidpContent on
-// SSR-render and read by the bot-detect middleware on subsequent
-// crawler requests so impressions can be enriched with content_id.
+// In-memory map: path → content_id, populated by the SDK's content
+// helper on SSR-render and read by the bot-detect middleware on
+// subsequent crawler requests so impressions can be enriched with
+// content_id.
 //
 // First-request limitation: the middleware fires BEFORE the page
 // renders, so the very first hit on a path has no registered
 // content_id. AI agents typically revisit; later hits get enriched.
 //
-// Module-scoped Map persists for the lifetime of the Nitro process.
+// Module-scoped Map persists for the lifetime of the host process.
 // In serverless cold-start scenarios the registry resets — acceptable
 // for the analytics signal.
 

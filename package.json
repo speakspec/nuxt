@@ -4,9 +4,17 @@
   "description": "AIDP 0.3 publishing channel for Nuxt — exposes /.well-known/aidp.json and friends, fetches signed content + pointer payloads from SpeakSpec, receives §8.10 cache-invalidation webhooks.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/speakspec/aidp-sdk-nuxt.git"
+    "url": "git+https://github.com/speakspec/nuxt.git"
+  },
+  "homepage": "https://docs.speakspec.com/developer/sdk-nuxt",
+  "bugs": {
+    "url": "https://github.com/speakspec/nuxt/issues"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "exports": {
     ".": {
