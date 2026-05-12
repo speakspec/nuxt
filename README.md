@@ -162,6 +162,34 @@ Set `speakspec.botTracking.enabled = true` and the SDK classifies inbound reques
 
 Pipe these into your observability stack (Loki, Datadog, BigQuery, ...) — the SDK does not couple to any specific analytics backend. Excluded by default: `/_nuxt/`, `/api/_aidp/`. Add more under `botTracking.excludePaths`.
 
+## Content inline vs directory (v0.4+)
+
+AIDP v0.4 introduces per-type content strategy. The entity owner can decide, per content type, whether content appears:
+
+- **Inline** (`inline`, default): full content envelopes appear inside `/.well-known/aidp.json`'s `content` array
+- **Directory** (`directory`): the type is omitted from `aidp.json.content`; AI agents fetch `/.well-known/aidp/content/directory.json` for the index, and `/.well-known/aidp/content/{id}.json` for individual envelopes
+
+The `content_index` field in `aidp.json` declares which types are inlined vs indexed:
+
+```json
+{
+  "content_index": {
+    "url": "https://example.com/.well-known/aidp/content/directory.json",
+    "types_inlined": ["faq", "service"],
+    "types_indexed": ["article", "event"],
+    "total_by_type": { "article": 1240, "event": 387, "faq": 18, "service": 6 },
+    "pinned_count": 3,
+    "updated_at": "2026-05-12T10:00:00Z"
+  }
+}
+```
+
+The SDK proxies the upstream response transparently—no client code change is needed when an entity owner switches strategy. AI consumers should check `content_index.types_indexed` and pull `directory.json` when needed.
+
+### Pinned content
+
+Any content can be marked `pinned: true`. Pinned content always appears in `aidp.json.content` regardless of the type's strategy, sorted first.
+
 ## CLI: `speakspec`
 
 A validator that customers can run against their own deployment to confirm the SDK is publishing correctly.
