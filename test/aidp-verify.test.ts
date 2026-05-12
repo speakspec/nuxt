@@ -71,10 +71,12 @@ function signEnvelope(payload: Record<string, unknown>, signedFields: string[], 
 }
 
 const baseEnv = {
-  '$aidp': '0.3.0',
+  '$aidp': '0.4.0',
   '@type': 'ContentEnvelope',
   'entity': { id: 'urn:aidp:entity:foo' },
   'id': 'article-1',
+  'type': 'article',
+  'pinned': false,
   'url': 'https://foo.example/articles/1',
   'updated_at': '2026-04-30T12:00:00Z',
 }

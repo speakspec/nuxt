@@ -23,7 +23,21 @@ beforeEach(() => {
 describe('fetchEntityDirective', () => {
   it('GETs the SpeakSpec public entity URL with auth header', async () => {
     mockedRaw.mockResolvedValueOnce({
-      _data: { '$aidp': '0.3.0', entity: { id: 'urn:aidp:entity:stockfeel' } },
+      _data: {
+        '$aidp': '0.4.0',
+        entity: { id: 'urn:aidp:entity:stockfeel' },
+        content: [
+          { spec_version: '0.4.0', content_id: 'fixture-faq-1', type: 'faq', pinned: false },
+        ],
+        content_index: {
+          url: 'https://stockfeel.com.tw/.well-known/aidp/content/directory.json',
+          types_inlined: ['faq'],
+          types_indexed: ['article'],
+          total_by_type: { faq: 2, article: 5 },
+          pinned_count: 0,
+          updated_at: '2026-05-12T10:00:00Z',
+        },
+      },
       headers: new Headers({ etag: 'W/"abc"' }),
     })
 
@@ -41,7 +55,21 @@ describe('fetchEntityDirective', () => {
     // can slice usage by version (RFC 9110 §10.1.5 convention).
     expect((init as { headers: Record<string, string> }).headers['User-Agent']).toMatch(/^@speakspec\/nuxt\/\d/)
 
-    expect(result.payload).toEqual({ '$aidp': '0.3.0', entity: { id: 'urn:aidp:entity:stockfeel' } })
+    expect(result.payload).toEqual({
+      '$aidp': '0.4.0',
+      entity: { id: 'urn:aidp:entity:stockfeel' },
+      content: [
+        { spec_version: '0.4.0', content_id: 'fixture-faq-1', type: 'faq', pinned: false },
+      ],
+      content_index: {
+        url: 'https://stockfeel.com.tw/.well-known/aidp/content/directory.json',
+        types_inlined: ['faq'],
+        types_indexed: ['article'],
+        total_by_type: { faq: 2, article: 5 },
+        pinned_count: 0,
+        updated_at: '2026-05-12T10:00:00Z',
+      },
+    })
     expect(result.etag).toBe('W/"abc"')
     expect(result.notModified).toBe(false)
   })
