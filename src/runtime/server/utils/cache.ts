@@ -122,9 +122,10 @@ export function buildContentUsage(payload: unknown): string | null {
   if (!ac || typeof ac !== 'object') return null
   const flags = ac as { allow_training?: unknown, allow_derivative?: unknown }
   const parts: string[] = []
-  if (flags.allow_training === true) parts.push('allow=FoundationModelProduction')
-  else if (flags.allow_training === false) parts.push('disallow=FoundationModelProduction')
-  if (flags.allow_derivative === true) parts.push('allow=Search')
+  if (flags.allow_training === true) parts.push('train-ai=y')
+  else if (flags.allow_training === false) parts.push('train-ai=n')
+  if (flags.allow_derivative === true) parts.push('search=y')
+  else if (flags.allow_derivative === false) parts.push('search=n')
   return parts.length > 0 ? parts.join(', ') : null
 }
 

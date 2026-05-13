@@ -6,17 +6,19 @@ import {
 } from '../src/runtime/utils/links'
 
 describe('entityLink', () => {
-  it('points at the SDK-served entity directive', () => {
-    expect(entityLink('https://stockfeel.com.tw')).toEqual({
+  it('returns root-relative href with type attribute', () => {
+    expect(entityLink()).toEqual({
       rel: 'aidp',
-      href: 'https://stockfeel.com.tw/.well-known/aidp.json',
+      href: '/.well-known/aidp.json',
+      type: 'application/aidp+json',
     })
   })
 
-  it('strips trailing slash from siteOrigin', () => {
-    expect(entityLink('https://stockfeel.com.tw/')).toEqual({
+  it('ignores optional siteOrigin arg (backward compat)', () => {
+    expect(entityLink('https://stockfeel.com.tw')).toEqual({
       rel: 'aidp',
-      href: 'https://stockfeel.com.tw/.well-known/aidp.json',
+      href: '/.well-known/aidp.json',
+      type: 'application/aidp+json',
     })
   })
 })

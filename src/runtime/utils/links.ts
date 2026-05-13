@@ -20,10 +20,11 @@ function trimSlash(s: string): string {
 }
 
 /** Discovery anchor pointing at the SDK-served entity directive. */
-export function entityLink(siteOrigin: string): LinkDescriptor {
+export function entityLink(_siteOrigin?: string): LinkDescriptor {
   return {
     rel: 'aidp',
-    href: `${trimSlash(siteOrigin)}/.well-known/aidp.json`,
+    href: '/.well-known/aidp.json',
+    type: 'application/aidp+json',
   }
 }
 

@@ -131,12 +131,13 @@ export default defineNuxtModule<ModuleOptions>({
     // common mistakes — uppercase, underscores, accidentally pasting
     // the full URN (`urn:aidp:entity:foo`) — at module-setup time
     // instead of letting them fail silently in the fetch path.
-    if (options.entityId && !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(options.entityId)) {
+    const slugRe = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/
+    const urnRe = /^urn:aidp:entity:[a-z0-9][a-z0-9-]*[a-z0-9]$/
+    if (options.entityId && !slugRe.test(options.entityId) && !urnRe.test(options.entityId)) {
       console.warn(
         `[@speakspec/nuxt] entityId %o does not match SpeakSpec's slug rule `
         + `(lowercase alphanumerics and hyphens, no leading/trailing hyphen). `
-        + `Verify against your SpeakSpec dashboard — pasting the URN form `
-        + `(urn:aidp:entity:foo) instead of the bare slug is a common mistake.`,
+        + `Accepted forms: bare slug "my-entity" or URN "urn:aidp:entity:my-entity".`,
         options.entityId,
       )
     }

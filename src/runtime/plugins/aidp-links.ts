@@ -45,7 +45,7 @@ export default defineNuxtPlugin(() => {
 
   useHead({
     link: [
-      entityLink(siteOrigin),
+      entityLink(),
       keysLink(endpoint),
     ],
   })

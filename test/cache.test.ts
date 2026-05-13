@@ -212,7 +212,7 @@ describe('respondWithCache', () => {
       'public, max-age=60',
       undefined,
     )
-    expect(event.node.res.getHeader('Content-Usage')).toBe('allow=FoundationModelProduction, allow=Search')
+    expect(event.node.res.getHeader('Content-Usage')).toBe('train-ai=y, search=y')
   })
 
   it('omits Content-Usage when payload has no access_control', () => {
@@ -238,14 +238,14 @@ describe('buildContentUsage', () => {
     expect(buildContentUsage({ directives: { access_control: {} } })).toBeNull()
   })
 
-  it('emits disallow=FoundationModelProduction when allow_training is false', () => {
+  it('emits train-ai=n when allow_training is false', () => {
     expect(buildContentUsage({ directives: { access_control: { allow_training: false } } }))
-      .toBe('disallow=FoundationModelProduction')
+      .toBe('train-ai=n')
   })
 
   it('combines training + derivative flags with comma separator', () => {
     expect(buildContentUsage({ directives: { access_control: { allow_training: true, allow_derivative: true } } }))
-      .toBe('allow=FoundationModelProduction, allow=Search')
+      .toBe('train-ai=y, search=y')
   })
 })
 

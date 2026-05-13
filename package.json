@@ -1,6 +1,6 @@
 {
   "name": "@speakspec/nuxt",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "AIDP 0.3 publishing channel for Nuxt — exposes /.well-known/aidp.json and friends, fetches signed content + pointer payloads from SpeakSpec, receives §8.10 cache-invalidation webhooks.",
   "repository": {
     "type": "git",
