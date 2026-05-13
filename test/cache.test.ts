@@ -8,6 +8,7 @@ import {
   isUpstream4xx,
   etagMatches,
   respondWithCache,
+  buildContentUsage,
   DEFAULT_CACHE_TTL_MS,
   invalidateEntityCache,
   invalidateContentCache,
@@ -193,6 +194,58 @@ describe('respondWithCache', () => {
     const event = fakeEvent()
     respondWithCache(event, '', { x: 1 }, 'public, max-age=60', undefined)
     expect(event.node.res.getHeader('ETag')).toBeUndefined()
+  })
+
+  it('sets AIDP-spec Content-Type and permissive CORS on the 200 path', () => {
+    const event = fakeEvent()
+    respondWithCache(event, '"abc"', { hello: 'world' }, 'public, max-age=60', undefined)
+    expect(event.node.res.getHeader('Content-Type')).toBe('application/aidp+json')
+    expect(event.node.res.getHeader('Access-Control-Allow-Origin')).toBe('*')
+  })
+
+  it('emits Content-Usage when payload directives.access_control is present', () => {
+    const event = fakeEvent()
+    respondWithCache(
+      event,
+      '"abc"',
+      { directives: { access_control: { allow_training: true, allow_derivative: true } } },
+      'public, max-age=60',
+      undefined,
+    )
+    expect(event.node.res.getHeader('Content-Usage')).toBe('allow=FoundationModelProduction, allow=Search')
+  })
+
+  it('omits Content-Usage when payload has no access_control', () => {
+    const event = fakeEvent()
+    respondWithCache(event, '"abc"', { hello: 'world' }, 'public, max-age=60', undefined)
+    expect(event.node.res.getHeader('Content-Usage')).toBeUndefined()
+  })
+})
+
+describe('buildContentUsage', () => {
+  it('returns null for non-objects', () => {
+    expect(buildContentUsage(null)).toBeNull()
+    expect(buildContentUsage('payload')).toBeNull()
+    expect(buildContentUsage(123)).toBeNull()
+  })
+
+  it('returns null when directives is absent', () => {
+    expect(buildContentUsage({ hello: 'world' })).toBeNull()
+  })
+
+  it('returns null when access_control is absent or empty', () => {
+    expect(buildContentUsage({ directives: {} })).toBeNull()
+    expect(buildContentUsage({ directives: { access_control: {} } })).toBeNull()
+  })
+
+  it('emits disallow=FoundationModelProduction when allow_training is false', () => {
+    expect(buildContentUsage({ directives: { access_control: { allow_training: false } } }))
+      .toBe('disallow=FoundationModelProduction')
+  })
+
+  it('combines training + derivative flags with comma separator', () => {
+    expect(buildContentUsage({ directives: { access_control: { allow_training: true, allow_derivative: true } } }))
+      .toBe('allow=FoundationModelProduction, allow=Search')
   })
 })
 

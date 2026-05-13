@@ -79,10 +79,11 @@ export function isUpstream4xx(err: unknown): boolean {
 
 /**
  * Common response writer for the three AIDP GET routes. Sets the
- * ETag and Cache-Control headers, and — per AIDP §8.7 — short-circuits
- * to `304 Not Modified` (empty body) when the inbound `If-None-Match`
- * matches the response ETag (RFC 7232 §2.3.2 weak comparison via
- * `etagMatches`).
+ * Content-Type / ETag / Cache-Control / Access-Control-Allow-Origin /
+ * Content-Usage headers per AIDP §8.3 + §11.6, and — per AIDP §8.7 —
+ * short-circuits to `304 Not Modified` (empty body) when the inbound
+ * `If-None-Match` matches the response ETag (RFC 7232 §2.3.2 weak
+ * comparison via `etagMatches`).
  */
 export function respondWithCache<T>(
   event: H3Event,
@@ -91,13 +92,40 @@ export function respondWithCache<T>(
   cacheControl: string,
   inboundIfNoneMatch: string | undefined | null,
 ): T | null {
+  setResponseHeader(event, 'Content-Type', 'application/aidp+json')
+  setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
   if (etag) setResponseHeader(event, 'ETag', etag)
   setResponseHeader(event, 'Cache-Control', cacheControl)
+  const usage = buildContentUsage(payload)
+  if (usage) setResponseHeader(event, 'Content-Usage', usage)
   if (etagMatches(inboundIfNoneMatch, etag)) {
     setResponseStatus(event, 304)
     return null
   }
   return payload
+}
+
+/**
+ * Project `directives.access_control` to an AIPREF-compatible
+ * `Content-Usage` header value per AIDP §11.6.
+ *
+ * Returns null when the payload is not an AIDP envelope (e.g. the
+ * directory listing has no `directives` field) or when `access_control`
+ * has no actionable flags — callers MUST NOT emit the header in that
+ * case rather than emitting an empty value.
+ */
+export function buildContentUsage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const directives = (payload as { directives?: unknown }).directives
+  if (!directives || typeof directives !== 'object') return null
+  const ac = (directives as { access_control?: unknown }).access_control
+  if (!ac || typeof ac !== 'object') return null
+  const flags = ac as { allow_training?: unknown, allow_derivative?: unknown }
+  const parts: string[] = []
+  if (flags.allow_training === true) parts.push('allow=FoundationModelProduction')
+  else if (flags.allow_training === false) parts.push('disallow=FoundationModelProduction')
+  if (flags.allow_derivative === true) parts.push('allow=Search')
+  return parts.length > 0 ? parts.join(', ') : null
 }
 
 /**
