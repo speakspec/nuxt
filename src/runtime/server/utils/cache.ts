@@ -74,7 +74,11 @@ export function isUpstream4xx(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const status = (err as { response?: { status?: number }, statusCode?: number }).response?.status
     ?? (err as { statusCode?: number }).statusCode
-  return typeof status === 'number' && status >= 400 && status < 500
+  // 429 is a transient quota/rate-limit signal — the SDK contract says
+  // "fall back to last cached payload if available" (see enforceSdkFetchQuota
+  // comment in aidp-server). Exclude it from the hard-error path so the
+  // catch block can serve stale instead of throwing 502.
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 429
 }
 
 /**
@@ -150,6 +154,7 @@ export interface CacheStorage {
  */
 export async function invalidateEntityCache(storage: CacheStorage, slug: string): Promise<void> {
   await storage.removeItem(cacheKey('entity', slug))
+  await storage.removeItem(cacheKey('llmstxt', slug))
   for (const prefix of [cacheKey('content', `${slug}:`), cacheKey('directory', `${slug}:`)]) {
     const keys = await storage.getKeys(prefix)
     for (const key of keys) {

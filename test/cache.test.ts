@@ -135,9 +135,9 @@ describe('invalidateEntityCache', () => {
   it('is a no-op when no matching keys exist', async () => {
     const s = new FakeStorage()
     await invalidateEntityCache(s, 'nobody')
-    // The entity key itself is unconditionally requested for removal,
-    // so the storage call count is 1 even when the key doesn't exist.
-    expect(s.removed).toEqual(['entity:nobody'])
+    // The entity and llmstxt keys are unconditionally removed; content/
+    // directory keys are only removed when they actually exist in storage.
+    expect(s.removed).toEqual(['entity:nobody', 'llmstxt:nobody'])
   })
 })
 

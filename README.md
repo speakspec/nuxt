@@ -110,6 +110,19 @@ export default defineNuxtConfig({
 - `GET /.well-known/aidp/content/{id}.json` — signed Content envelope (§8.7)
 - `GET /.well-known/aidp/content/` — paginated content directory (§8.8)
 - `POST /api/_aidp/invalidate` — cache-invalidation webhook receiver (§8.10)
+- `GET /llms.txt` — llms.txt projection per spec §11.3 (opt-in, see below)
+
+**llms.txt (opt-in)**
+
+```ts
+// nuxt.config.ts
+speakspec: {
+  entityId: 'your-entity',
+  llmsTxt: true,   // enables GET /llms.txt
+}
+```
+
+The route serves a live `text/markdown` projection of your AIDP entity data. The cache is swept automatically when the webhook receiver invalidates the entity directive.
 
 ### HTML head injection
 

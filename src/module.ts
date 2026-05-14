@@ -85,6 +85,17 @@ export interface ModuleOptions {
   }
 
   /**
+   * Serve `/llms.txt` — an llms.txt projection of the entity directive
+   * per AIDP spec §11.3. Off by default; enable when you want AI crawlers
+   * to discover your AIDP data via the llms.txt convention. The route
+   * fetches the same upstream endpoint as `/.well-known/aidp.json` with
+   * `Accept: text/markdown` and caches the result for the same `ttlSec`
+   * window. Webhook invalidation sweeps the llms.txt cache together with
+   * the entity directive cache.
+   */
+  llmsTxt?: boolean
+
+  /**
    * AI crawler detection middleware. Off by default. When enabled,
    * the SDK inspects every incoming request's User-Agent and emits a
    * structured `aidp.crawler_impression` JSON log line on matches.
@@ -236,6 +247,15 @@ export default defineNuxtModule<ModuleOptions>({
       method: 'get',
       handler: resolver.resolve('./runtime/server/routes/well-known/aidp/content/index.get'),
     })
+
+    // /llms.txt — llms.txt projection per spec §11.3 (opt-in).
+    if (options.llmsTxt) {
+      addServerHandler({
+        route: '/llms.txt',
+        method: 'get',
+        handler: resolver.resolve('./runtime/server/routes/llms.txt.get'),
+      })
+    }
 
     // POST /api/_aidp/invalidate — receives §8.10 webhooks from
     // SpeakSpec when a directive / content / entity changes. Verifies
